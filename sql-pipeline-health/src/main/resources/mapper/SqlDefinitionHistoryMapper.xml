@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sqlpipeline.health.mapper.SqlDefinitionHistoryMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sql_definition_history (
+            sql_def_id, version, sql_text, assert_type, assert_config, cron_expr,
+            changed_by, changed_at, change_type
+        ) VALUES (
+            #{sqlDefId}, #{version}, #{sqlText}, #{assertType},
+            CAST(#{assertConfig,jdbcType=VARCHAR} AS jsonb),
+            #{cronExpr}, #{changedBy}, now(), #{changeType}
+        )
+    </insert>
+
+    <select id="selectByDefId" resultType="com.sqlpipeline.health.entity.SqlDefinitionHistory">
+        SELECT * FROM sql_definition_history WHERE sql_def_id = #{sqlDefId}
+        ORDER BY version DESC, id DESC
+    </select>
+</mapper>

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sqlpipeline.datasource.mapper.DbConnectionMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO db_connection (
+            conn_key, display_name, jdbc_url, username, password_enc, driver_class,
+            pool_size, conn_timeout_ms, max_rows, query_timeout_s, enabled,
+            created_by, created_at, updated_by, updated_at
+        ) VALUES (
+            #{connKey}, #{displayName}, #{jdbcUrl}, #{username}, #{passwordEnc}, #{driverClass},
+            #{poolSize}, #{connTimeoutMs}, #{maxRows}, #{queryTimeoutS}, #{enabled},
+            #{createdBy}, now(), #{updatedBy}, now()
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE db_connection
+        SET display_name    = #{displayName},
+            jdbc_url        = #{jdbcUrl},
+            username        = #{username},
+            password_enc    = #{passwordEnc},
+            driver_class    = #{driverClass},
+            pool_size       = #{poolSize},
+            conn_timeout_ms = #{connTimeoutMs},
+            max_rows        = #{maxRows},
+            query_timeout_s = #{queryTimeoutS},
+            enabled         = #{enabled},
+            updated_by      = #{updatedBy},
+            updated_at      = now()
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateEnabled">
+        UPDATE db_connection
+        SET enabled = #{enabled}, updated_by = #{updatedBy}, updated_at = now()
+        WHERE id = #{id}
+    </update>
+
+    <select id="selectById" resultType="com.sqlpipeline.datasource.entity.DbConnection">
+        SELECT * FROM db_connection WHERE id = #{id}
+    </select>
+
+    <select id="selectByKey" resultType="com.sqlpipeline.datasource.entity.DbConnection">
+        SELECT * FROM db_connection WHERE conn_key = #{connKey}
+    </select>
+
+    <select id="selectAll" resultType="com.sqlpipeline.datasource.entity.DbConnection">
+        SELECT * FROM db_connection ORDER BY id
+    </select>
+
+    <select id="selectEnabled" resultType="com.sqlpipeline.datasource.entity.DbConnection">
+        SELECT * FROM db_connection WHERE enabled = 1 ORDER BY id
+    </select>
+</mapper>

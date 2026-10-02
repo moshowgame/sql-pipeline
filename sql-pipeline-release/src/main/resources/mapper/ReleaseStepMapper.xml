@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sqlpipeline.release.mapper.ReleaseStepMapper">
+
+    <insert id="batchInsert">
+        INSERT INTO release_step (plan_id, step_no, dir_path, conn_key, after_mode, executor, status)
+        VALUES
+        <foreach collection="steps" item="s" separator=",">
+            (#{s.planId}, #{s.stepNo}, #{s.dirPath}, #{s.connKey}, #{s.afterMode}, #{s.executor}, #{s.status})
+        </foreach>
+    </insert>
+
+    <select id="selectById" resultType="com.sqlpipeline.release.entity.ReleaseStep">
+        SELECT * FROM release_step WHERE id = #{id}
+    </select>
+
+    <select id="selectByNo" resultType="com.sqlpipeline.release.entity.ReleaseStep">
+        SELECT * FROM release_step WHERE plan_id = #{planId} AND step_no = #{stepNo}
+    </select>
+
+    <select id="selectByPlan" resultType="com.sqlpipeline.release.entity.ReleaseStep">
+        SELECT * FROM release_step WHERE plan_id = #{planId} ORDER BY step_no
+    </select>
+
+    <select id="selectNextActionable" resultType="com.sqlpipeline.release.entity.ReleaseStep">
+        SELECT * FROM release_step
+        WHERE plan_id = #{planId} AND status IN ('PENDING', 'WAITING_CONTINUE')
+        ORDER BY step_no
+        LIMIT 1
+    </select>
+
+    <select id="selectWaiting" resultType="com.sqlpipeline.release.entity.ReleaseStep">
+        SELECT * FROM release_step
+        WHERE plan_id = #{planId} AND status = 'WAITING_CONTINUE'
+        ORDER BY step_no
+        LIMIT 1
+    </select>
+
+    <select id="countByStatus" resultType="int">
+        SELECT count(*) FROM release_step WHERE plan_id = #{planId} AND status = #{status}
+    </select>
+
+    <update id="updateStatus">
+        UPDATE release_step SET status = #{status} WHERE id = #{id}
+    </update>
+
+    <update id="markRunning">
+        UPDATE release_step SET status = 'RUNNING', started_at = now(), finished_at = NULL, error_msg = NULL
+        WHERE id = #{id}
+    </update>
+
+    <update id="markSuccess">
+        UPDATE release_step SET status = 'SUCCESS', finished_at = now(), duration_ms = #{durationMs}, error_msg = NULL
+        WHERE id = #{id}
+    </update>
+
+    <update id="markFail">
+        UPDATE release_step SET status = 'FAIL', finished_at = now(), duration_ms = #{durationMs}, error_msg = #{errorMsg}
+        WHERE id = #{id}
+    </update>
+
+    <update id="markSkipped">
+        UPDATE release_step SET status = 'SKIPPED', finished_at = now() WHERE id = #{id}
+    </update>
+
+    <update id="incrementRetry">
+        UPDATE release_step SET retry_count = retry_count + 1 WHERE id = #{id}
+    </update>
+
+    <delete id="deleteByPlan">
+        DELETE FROM release_step WHERE plan_id = #{planId}
+    </delete>
+</mapper>

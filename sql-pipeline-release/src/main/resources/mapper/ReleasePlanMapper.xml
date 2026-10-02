@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sqlpipeline.release.mapper.ReleasePlanMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO release_plan (plan_name, base_path, default_conn_key, step_config, status, created_by, created_at)
+        VALUES (#{planName}, #{basePath}, #{defaultConnKey},
+                CAST(#{stepConfig,jdbcType=VARCHAR} AS jsonb),
+                #{status}, #{createdBy}, now())
+    </insert>
+
+    <update id="updateForStart">
+        UPDATE release_plan
+        SET status      = #{status},
+            cr_number   = #{crNumber},
+            remark      = #{remark},
+            operator    = #{operator},
+            started_at  = now(),
+            finished_at = NULL
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE release_plan SET status = #{status} WHERE id = #{id}
+    </update>
+
+    <update id="markFinished">
+        UPDATE release_plan SET status = #{status}, finished_at = now() WHERE id = #{id}
+    </update>
+
+    <update id="resetForRerun">
+        UPDATE release_plan
+        SET status      = 'DRAFT',
+            started_at  = NULL,
+            finished_at = NULL,
+            rerun_count = rerun_count + 1
+        WHERE id = #{id}
+    </update>
+
+    <select id="selectById" resultType="com.sqlpipeline.release.entity.ReleasePlan">
+        SELECT * FROM release_plan WHERE id = #{id}
+    </select>
+
+    <select id="selectAll" resultType="com.sqlpipeline.release.entity.ReleasePlan">
+        SELECT * FROM release_plan ORDER BY id DESC
+    </select>
+</mapper>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sqlpipeline.health.mapper.HealthCheckRunMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO health_check_run (sql_def_id, version, trigger_type, status, started_at)
+        VALUES (#{sqlDefId}, #{version}, #{triggerType}, #{status}, now())
+    </insert>
+
+    <update id="updateResult">
+        UPDATE health_check_run
+        SET status      = #{status},
+            finished_at = now(),
+            duration_ms = #{durationMs},
+            row_count   = #{rowCount},
+            result_head = #{resultHead,jdbcType=VARCHAR},
+            assert_msg  = #{assertMsg,jdbcType=VARCHAR},
+            error_msg   = #{errorMsg,jdbcType=VARCHAR}
+        WHERE id = #{id}
+    </update>
+
+    <select id="pageByDefId" resultType="com.sqlpipeline.health.entity.HealthCheckRun">
+        SELECT t.*, count(*) OVER () AS total_count
+        FROM (
+            SELECT * FROM health_check_run WHERE sql_def_id = #{sqlDefId}
+            ORDER BY started_at DESC, id DESC
+            LIMIT #{limit} OFFSET #{offset}
+        ) t
+    </select>
+</mapper>

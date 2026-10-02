@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sqlpipeline.health.mapper.SqlDefinitionMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sql_definition (
+            name, conn_key, sql_text, params_json, assert_type, assert_config,
+            cron_expr, timeout_sec, enabled, version, created_by, created_at, updated_by, updated_at
+        ) VALUES (
+            #{name}, #{connKey}, #{sqlText},
+            CAST(#{paramsJson,jdbcType=VARCHAR} AS jsonb),
+            #{assertType},
+            CAST(#{assertConfig,jdbcType=VARCHAR} AS jsonb),
+            #{cronExpr}, #{timeoutSec}, #{enabled}, #{version},
+            #{createdBy}, now(), #{updatedBy}, now()
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE sql_definition
+        SET name          = #{name},
+            conn_key      = #{connKey},
+            sql_text      = #{sqlText},
+            params_json   = CAST(#{paramsJson,jdbcType=VARCHAR} AS jsonb),
+            assert_type   = #{assertType},
+            assert_config = CAST(#{assertConfig,jdbcType=VARCHAR} AS jsonb),
+            cron_expr     = #{cronExpr},
+            timeout_sec   = #{timeoutSec},
+            enabled       = #{enabled},
+            version       = #{version},
+            updated_by    = #{updatedBy},
+            updated_at    = now()
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateEnabled">
+        UPDATE sql_definition
+        SET enabled = #{enabled}, updated_by = #{updatedBy}, updated_at = now()
+        WHERE id = #{id}
+    </update>
+
+    <select id="selectById" resultType="com.sqlpipeline.health.entity.SqlDefinition">
+        SELECT * FROM sql_definition WHERE id = #{id}
+    </select>
+
+    <select id="selectAll" resultType="com.sqlpipeline.health.entity.SqlDefinition">
+        SELECT * FROM sql_definition ORDER BY id
+    </select>
+
+    <select id="selectEnabled" resultType="com.sqlpipeline.health.entity.SqlDefinition">
+        SELECT * FROM sql_definition WHERE enabled = 1 ORDER BY id
+    </select>
+</mapper>

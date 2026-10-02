@@ -1,0 +1,51 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: sql-pipeline
+  datasource:
+    # 平台元数据库（PostgreSQL）：连接定义、健康检查定义、发布计划等全部配置存于此库
+    # stringtype=unspecified 便于 MyBatis 直接写 jsonb 列
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:sql_pipeline}
+    username: ${DB_USER:pipeline}
+    password: ${DB_PASSWORD:pipeline}
+    hikari:
+      maximum-pool-size: 20
+      pool-name: platform-meta-pool
+  sql:
+    init:
+      # 幂等建表（CREATE TABLE IF NOT EXISTS），首次启动自动初始化
+      mode: always
+
+mybatis:
+  mapper-locations: classpath*:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+
+sql-pipeline:
+  crypto:
+    # AES-256 密钥（Base64 的 32 字节），生成：openssl rand -base64 32
+    key: ${SQL_PIPELINE_AES_KEY:}
+  release:
+    # 发布目录根路径：其下每个 release_YYYYMMDD 目录为一个发布计划
+    base-path: ${RELEASE_BASE_PATH:./data/releases}
+    sql-suffix: .sql
+    max-steps: 99
+    statement-timeout-sec: 60
+  health:
+    scheduler:
+      # 默认 TaskScheduler 池大小为 1，必须显式设置避免慢任务互相阻塞
+      pool-size: 8
+    default-timeout-sec: 30
+    default-max-rows: 1000
+
+logging:
+  level:
+    com.sqlpipeline: INFO

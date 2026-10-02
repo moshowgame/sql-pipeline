@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sqlpipeline.release.mapper.ReleaseRunSummaryMapper">
+
+    <insert id="insert">
+        INSERT INTO release_run_summary (plan_id, run_seq, total_ms, step_detail, started_at, finished_at, operator)
+        VALUES (#{planId}, #{runSeq}, #{totalMs},
+                CAST(#{stepDetail,jdbcType=VARCHAR} AS jsonb),
+                #{startedAt}, #{finishedAt}, #{operator})
+        ON CONFLICT (plan_id, run_seq) DO NOTHING
+    </insert>
+
+    <select id="selectByPlan" resultType="com.sqlpipeline.release.entity.ReleaseRunSummary">
+        SELECT * FROM release_run_summary WHERE plan_id = #{planId} ORDER BY run_seq
+    </select>
+</mapper>
