@@ -4,10 +4,10 @@
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO sql_definition_history (
-            sql_def_id, version, sql_text, assert_type, assert_config, cron_expr,
+            sql_def_id, version, sql_text, assert_type, assert_op, assert_value, assert_config, cron_expr,
             changed_by, changed_at, change_type
         ) VALUES (
-            #{sqlDefId}, #{version}, #{sqlText}, #{assertType},
+            #{sqlDefId}, #{version}, #{sqlText}, #{assertType}, #{assertOp}, #{assertValue},
             CAST(#{assertConfig,jdbcType=VARCHAR} AS jsonb),
             #{cronExpr}, #{changedBy}, now(), #{changeType}
         )

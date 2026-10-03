@@ -5,78 +5,86 @@ import com.sqlpipeline.common.exception.BizException;
 import com.sqlpipeline.datasource.executor.QueryResult;
 import org.springframework.stereotype.Component;
 
-import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.math.BigDecimal;
+import java.util.Set;
 
-/** 断言求值器：VALUE / ROWCOUNT / RECORD 三类断言。 */
+/**
+ * 断言求值器（简化模型）：断言 = 目标类型 + 操作符 + 期望数值。
+ * <ul>
+ *   <li>VALUE（数值）：取查询结果第一行第一列，与期望值按操作符比较</li>
+ *   <li>ROWS（数组/行数）：取查询结果行数，与期望值按操作符比较</li>
+ * </ul>
+ * 操作符：== != > >= < <=。不引入表达式引擎（ADR-08）。
+ */
 @Component
 public class AssertEvaluator {
 
-    private static final Pattern CELL = Pattern.compile("^cell\\((\\d+)\\s*,\\s*(\\d+)\\)$");
+    public static final String TYPE_VALUE = "VALUE";
+    public static final String TYPE_ROWS = "ROWS";
 
-    public AssertResult evaluate(AssertConfig cfg, QueryResult result) {
-        return switch (cfg.getType()) {
-            case AssertConfig.TYPE_VALUE -> evalValue(cfg, result);
-            case AssertConfig.TYPE_ROWCOUNT -> evalRowCount(cfg, result);
-            case AssertConfig.TYPE_RECORD -> evalRecord(cfg, result);
-            default -> throw new BizException(ErrorCode.HC_CONFIG_INVALID, "未知断言类型: " + cfg.getType());
+    public static final Set<String> TYPES = Set.of(TYPE_VALUE, TYPE_ROWS);
+    public static final Set<String> OPS = Set.of("==", "!=", ">", ">=", "<", "<=");
+
+    public AssertResult evaluate(String type, String op, BigDecimal expected, QueryResult result) {
+        checkOp(op);
+        Object actual = TYPE_ROWS.equals(type)
+                ? BigDecimal.valueOf(result.getRowCount())
+                : result.cell(0, 0);
+
+        BigDecimal actualNum = toNumber(actual);
+        boolean pass = actualNum != null && compare(op, actualNum, expected);
+        String message = String.format("expected %s %s, actual=%s%s",
+                op, expected, actual, actualNum == null && actual != null ? "（非数值）" : "");
+        return new AssertResult(pass, message);
+    }
+
+    /** 保存前校验断言三要素。 */
+    public void validate(String type, String op, BigDecimal value) {
+        if (type == null || !TYPES.contains(type)) {
+            throw new BizException(ErrorCode.HC_CONFIG_INVALID, "断言类型仅支持 VALUE（返回值）/ ROWS（返回行数）: " + type);
+        }
+        checkOp(op);
+        if (value == null) {
+            throw new BizException(ErrorCode.HC_CONFIG_INVALID, "断言缺少期望值");
+        }
+    }
+
+    private void checkOp(String op) {
+        if (op == null || !OPS.contains(op)) {
+            throw new BizException(ErrorCode.HC_CONFIG_INVALID, "不支持的操作符: " + op + "，支持 == != > >= < <=");
+        }
+    }
+
+    private boolean compare(String op, BigDecimal actual, BigDecimal expected) {
+        int c = actual.compareTo(expected);
+        return switch (op) {
+            case "==" -> c == 0;
+            case "!=" -> c != 0;
+            case ">" -> c > 0;
+            case ">=" -> c >= 0;
+            case "<" -> c < 0;
+            case "<=" -> c <= 0;
+            default -> throw new BizException(ErrorCode.HC_CONFIG_INVALID, "不支持的操作符: " + op);
         };
     }
 
-    private AssertResult evalValue(AssertConfig cfg, QueryResult r) {
-        Object actual;
-        if ("rowCount".equals(cfg.getExpr())) {
-            actual = r.getRowCount();
-        } else {
-            Matcher m = CELL.matcher(cfg.getExpr().trim());
-            if (!m.matches()) {
-                throw new BizException(ErrorCode.HC_CONFIG_INVALID,
-                        "expr 仅支持 rowCount 或 cell(row,col)，当前: " + cfg.getExpr());
-            }
-            actual = r.cell(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)));
+    private BigDecimal toNumber(Object v) {
+        if (v == null) {
+            return null;
         }
-        boolean pass = Operator.apply(cfg.getOp(), actual, cfg.getValue());
-        return new AssertResult(pass, String.format("expected %s %s, actual=%s",
-                cfg.getOp(), cfg.getValue(), actual));
-    }
-
-    private AssertResult evalRowCount(AssertConfig cfg, QueryResult r) {
-        Integer actual = r.getRowCount();
-        boolean pass = Operator.apply(cfg.getOp(), actual, cfg.getValue());
-        return new AssertResult(pass, String.format("expected rowCount %s %s, actual=%d%s",
-                cfg.getOp(), cfg.getValue(), actual, r.isTruncated() ? "（结果集已截断）" : ""));
-    }
-
-    private AssertResult evalRecord(AssertConfig cfg, QueryResult r) {
-        if (r.getRows().isEmpty()) {
-            return new AssertResult(false, "无记录可校验");
+        if (v instanceof BigDecimal bd) {
+            return bd;
         }
-        boolean all = "ALL".equalsIgnoreCase(cfg.getMode());
-        if (all) {
-            for (int i = 0; i < r.getRows().size(); i++) {
-                Map<String, Object> row = r.getRows().get(i);
-                for (AssertConfig.Rule rule : cfg.getRules()) {
-                    if (!Operator.apply(rule.getOp(), row.get(rule.getField()), rule.getValue())) {
-                        return new AssertResult(false, String.format("第 %d 行不满足规则: field=%s %s %s (actual=%s)",
-                                i, rule.getField(), rule.getOp(), rule.getValue(), row.get(rule.getField())));
-                    }
-                }
-            }
-            return new AssertResult(true, String.format("全部 %d 行满足 %d 条规则", r.getRows().size(), cfg.getRules().size()));
+        if (v instanceof Number n) {
+            return new BigDecimal(n.toString());
         }
-        for (Map<String, Object> row : r.getRows()) {
-            boolean rowPass = true;
-            for (AssertConfig.Rule rule : cfg.getRules()) {
-                if (!Operator.apply(rule.getOp(), row.get(rule.getField()), rule.getValue())) {
-                    rowPass = false;
-                    break;
-                }
-            }
-            if (rowPass) {
-                return new AssertResult(true, "存在满足全部规则的记录");
-            }
+        if (v instanceof Boolean b) {
+            return b ? BigDecimal.ONE : BigDecimal.ZERO;
         }
-        return new AssertResult(false, "无任一记录满足全部规则");
+        try {
+            return new BigDecimal(v.toString().trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 }

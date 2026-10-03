@@ -76,12 +76,14 @@
                         </select>
                     </div>
                     <div class="col-12">
-                        <label class="form-label">SQL（仅 SELECT）<span class="text-danger">*</span>　参数用 <code>?</code> 占位，顺序对应下方默认参数</label>
-                        <textarea id="dSql" class="form-control form-control-sm sql-text" rows="4" placeholder="SELECT count(*) AS total FROM t WHERE created_at > ?"></textarea>
+                        <label class="form-label">SQL（仅 SELECT）<span class="text-danger">*</span>　参数用 <code>${name}</code> 占位，如 <code>${date}</code>、<code>${status}</code></label>
+                        <textarea id="dSql" class="form-control form-control-sm sql-text" rows="4"
+                                  placeholder="SELECT count(*) AS total FROM t WHERE created_at >= ${date} AND status = ${status}"></textarea>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label">默认参数（JSON 数组，可空）</label>
-                        <textarea id="dParams" class="form-control form-control-sm mono" rows="1" placeholder='["2026-10-01"]'></textarea>
+                        <label class="form-label">默认参数（JSON 对象，可空）</label>
+                        <textarea id="dParams" class="form-control form-control-sm mono" rows="1" placeholder='{"date":"2026-10-01","status":1}'></textarea>
+                        <div class="form-text">key 对应 SQL 中的 ${name}；手动执行时可临时覆盖</div>
                     </div>
                     <div class="col-md-3">
                         <label class="form-label">Cron 表达式（6 段，可空=不调度）</label>
@@ -91,23 +93,51 @@
                         <label class="form-label">断言类型（可空=不校验）</label>
                         <select id="dAssertType" class="form-select form-select-sm">
                             <option value="">无断言</option>
-                            <option value="VALUE">VALUE 标量比较</option>
-                            <option value="ROWCOUNT">ROWCOUNT 行数比较</option>
-                            <option value="RECORD">RECORD 记录级规则</option>
+                            <option value="VALUE">返回值（第一行第一列）</option>
+                            <option value="ROWS">返回行数</option>
                         </select>
                     </div>
-                    <div class="col-12" id="assertConfigWrap">
-                        <label class="form-label">断言配置（JSON）</label>
-                        <div class="mb-1" id="assertTemplates"></div>
-                        <textarea id="dAssertConfig" class="form-control form-control-sm mono" rows="5"
-                                  placeholder='{"type":"VALUE","expr":"cell(0,0)","op":"==","value":1}'></textarea>
-                        <div class="form-text">操作符：== != &gt; &gt;= &lt; &lt;= not_null is_null in not_in regex；expr 支持 rowCount 与 cell(row,col)</div>
+                    <div class="col-md-2">
+                        <label class="form-label">操作符</label>
+                        <select id="dAssertOp" class="form-select form-select-sm">
+                            <option value="==">= 等于</option>
+                            <option value="!=">!= 不等于</option>
+                            <option value=">">&gt; 大于</option>
+                            <option value=">=">&gt;= 大于等于</option>
+                            <option value="<">&lt; 小于</option>
+                            <option value="<=">&lt;= 小于等于</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">期望值</label>
+                        <input id="dAssertValue" type="number" step="any" class="form-control form-control-sm" placeholder="如 0 / 100">
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">取消</button>
                 <button class="btn btn-primary btn-sm" onclick="saveDef()">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 执行（参数覆盖） -->
+<div class="modal fade" id="runParamsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">执行健康检查 <span id="runParamsTitle" class="text-muted fs-6"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label">覆盖参数（JSON 对象，key 对应 SQL 中 ${name}；留空 { } 使用默认参数）</label>
+                <textarea id="runParamsInput" class="form-control form-control-sm mono" rows="4" placeholder='{"date":"2026-10-02"}'></textarea>
+                <div class="form-text mt-2">本次执行记录将以 MANUAL 触发类型保存。</div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+                <button class="btn btn-success btn-sm" onclick="doRun()">执行</button>
             </div>
         </div>
     </div>

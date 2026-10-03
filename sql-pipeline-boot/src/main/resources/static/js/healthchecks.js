@@ -2,12 +2,6 @@ let definitions = [];
 let connections = [];
 let runsState = { defId: null, page: 1, size: 10, total: 0 };
 
-const ASSERT_TEMPLATES = {
-    VALUE: '{"type":"VALUE","expr":"cell(0,0)","op":"==","value":1}',
-    ROWCOUNT: '{"type":"ROWCOUNT","op":">=","value":1}',
-    RECORD: '{"type":"RECORD","mode":"ALL","rules":[{"field":"status","op":"not_null"},{"field":"type","op":"in","value":["A","B"]}]}'
-};
-
 $(function () {
     App.bindOperator();
     $.when(App.api('GET', '/api/health-checks'), App.api('GET', '/api/connections'))
@@ -33,7 +27,7 @@ function render() {
             '<td class="fw-bold">' + App.escapeHtml(d.name) + '</td>' +
             '<td class="mono">' + App.escapeHtml(d.connKey) + '</td>' +
             '<td class="sql-cell" title="' + App.escapeHtml(d.sqlText) + '">' + App.escapeHtml(d.sqlText) + '</td>' +
-            '<td>' + (d.assertType ? App.badge(d.assertType, 'info') : '<span class="text-muted">-</span>') + '</td>' +
+            '<td>' + (d.assertType ? App.badge(d.assertType + ' ' + d.assertOp + ' ' + d.assertValue, 'info') : '<span class="text-muted">-</span>') + '</td>' +
             '<td class="mono">' + App.escapeHtml(d.cronExpr || '-') + '</td>' +
             '<td class="mono">' + d.timeoutSec + 's</td>' +
             '<td class="mono">v' + d.version + '</td>' +
@@ -58,31 +52,14 @@ function connOptions(selected) {
         App.escapeHtml(c.connKey + '（' + c.displayName + '）') + '</option>').join('');
 }
 
-function renderAssertTemplates(type) {
-    if (!type || !ASSERT_TEMPLATES[type]) {
-        $('#assertTemplates').html('');
-        return;
-    }
-    $('#assertTemplates').html(
-        '<button type="button" class="btn btn-outline-info btn-sm me-1" onclick=\'fillTemplate("' + type + '")\'>填入 ' + type + ' 示例</button>' +
-        '<span class="text-muted small">' + ({
-            VALUE: '对单个单元格或行数做比较',
-            ROWCOUNT: '对返回行数做比较',
-            RECORD: '对每行/任一行的字段做规则校验'
-        })[type] + '</span>');
-}
-
-function fillTemplate(type) {
-    $('#dAssertConfig').val(ASSERT_TEMPLATES[type]);
-}
-
 function openCreate() {
     $('#defModalTitle').text('新建健康检查');
     $('#defForm')[0].reset();
     $('#defId').val('');
     $('#dConnKey').html(connOptions());
     $('#dTimeout').val(30); $('#dEnabled').val(1);
-    $('#dAssertType').val(''); renderAssertTemplates('');
+    $('#dParams').val('{}');
+    $('#dAssertType').val(''); $('#dAssertOp').val('=='); $('#dAssertValue').val('');
     new bootstrap.Modal('#defModal').show();
 }
 
@@ -96,15 +73,13 @@ function openEdit(id) {
     $('#dSql').val(d.sqlText);
     $('#dParams').val(App.prettyJson(d.paramsJson));
     $('#dAssertType').val(d.assertType || '');
-    $('#dAssertConfig').val(App.prettyJson(d.assertConfig));
+    $('#dAssertOp').val(d.assertOp || '==');
+    $('#dAssertValue').val(d.assertValue === null || d.assertValue === undefined ? '' : d.assertValue);
     $('#dCron').val(d.cronExpr || '');
     $('#dTimeout').val(d.timeoutSec);
     $('#dEnabled').val(String(d.enabled));
-    renderAssertTemplates(d.assertType);
     new bootstrap.Modal('#defModal').show();
 }
-
-$('#dAssertType').on('change', function () { renderAssertTemplates($(this).val()); });
 
 function saveDef() {
     const id = $('#defId').val();
@@ -114,7 +89,8 @@ function saveDef() {
         sqlText: $('#dSql').val(),
         paramsJson: $('#dParams').val().trim() || null,
         assertType: $('#dAssertType').val() || null,
-        assertConfig: $('#dAssertConfig').val().trim() || null,
+        assertOp: $('#dAssertOp').val(),
+        assertValue: $('#dAssertValue').val() === '' ? null : parseFloat($('#dAssertValue').val()),
         cronExpr: $('#dCron').val().trim() || null,
         timeoutSec: parseInt($('#dTimeout').val(), 10),
         enabled: parseInt($('#dEnabled').val(), 10)
@@ -123,8 +99,20 @@ function saveDef() {
         App.toast('请填写名称、连接与 SQL', 'danger');
         return;
     }
-    if (body.paramsJson) { try { JSON.parse(body.paramsJson); } catch (e) { App.toast('默认参数不是合法 JSON：' + e.message, 'danger'); return; } }
+    if (body.paramsJson) {
+        let params;
+        try { params = JSON.parse(body.paramsJson); }
+        catch (e) { App.toast('默认参数不是合法 JSON：' + e.message, 'danger'); return; }
+        if (Array.isArray(params) || typeof params !== 'object' || params === null) {
+            App.toast('默认参数需为 JSON 对象，如 {"date":"2026-10-01","status":1}', 'danger');
+            return;
+        }
+    }
     if (body.assertConfig) { try { JSON.parse(body.assertConfig); } catch (e) { App.toast('断言配置不是合法 JSON：' + e.message, 'danger'); return; } }
+    if (body.assertType && (body.assertValue === null || isNaN(body.assertValue))) {
+        App.toast('已选择断言类型，请填写期望值', 'danger');
+        return;
+    }
     const req = id ? App.api('PUT', '/api/health-checks/' + id, body)
         : App.api('POST', '/api/health-checks', body);
     req.then(function () {
@@ -135,23 +123,47 @@ function saveDef() {
 }
 
 function runDef(id) {
-    App.api('POST', '/api/health-checks/' + id + '/run', {}).then(function (run) {
-        const failed = run.status !== 'SUCCESS';
-        $('#runModalBadge').html(' ' + App.runBadge(run.status));
-        $('#runResultBody').html(
-            '<div class="row g-2 mb-2">' +
-            '<div class="col-md-3"><span class="kv-label">版本</span><span class="mono">v' + run.version + '</span></div>' +
-            '<div class="col-md-3"><span class="kv-label">行数</span><span class="mono">' + run.rowCount + '</span></div>' +
-            '<div class="col-md-3"><span class="kv-label">耗时</span><span class="mono">' + App.fmtMs(run.durationMs) + '</span></div>' +
-            '<div class="col-md-3"><span class="kv-label">触发</span><span class="mono">' + run.triggerType + '</span></div>' +
-            '</div>' +
-            (run.assertMsg ? '<div class="alert ' + (failed ? 'alert-danger' : 'alert-success') + ' py-2">断言：' + App.escapeHtml(run.assertMsg) + '</div>' : '') +
-            (run.errorMsg ? '<div class="alert alert-danger py-2 sql-text">错误：' + App.escapeHtml(run.errorMsg) + '</div>' : '') +
-            '<div class="text-muted small mb-1">结果预览（前 20 行）</div>' +
-            '<pre class="border rounded bg-light p-2 sql-text" style="max-height:320px;overflow:auto">' + App.escapeHtml(App.prettyJson(run.resultHead)) + '</pre>');
-        new bootstrap.Modal('#runModal').show();
-        loadListQuietly();
+    const d = definitions.find(x => x.id === id);
+    $('#runParamsTitle').text('#' + id + ' ' + (d ? d.name : ''));
+    $('#runParamsInput').val((d && d.paramsJson) ? App.prettyJson(d.paramsJson) : '{}');
+    $('#runParamsInput').data('defId', id);
+    new bootstrap.Modal('#runParamsModal').show();
+}
+
+function doRun() {
+    const id = $('#runParamsInput').data('defId');
+    const raw = $('#runParamsInput').val().trim();
+    let params = {};
+    if (raw) {
+        try { params = JSON.parse(raw); }
+        catch (e) { App.toast('覆盖参数不是合法 JSON：' + e.message, 'danger'); return; }
+        if (Array.isArray(params) || typeof params !== 'object' || params === null) {
+            App.toast('覆盖参数需为 JSON 对象，如 {"date":"2026-10-02"}', 'danger');
+            return;
+        }
+    }
+    App.api('POST', '/api/health-checks/' + id + '/run', { params: params }).then(function (run) {
+        bootstrap.Modal.getInstance($('#runParamsModal')[0]).hide();
+        showRunResult(run);
     });
+}
+
+function showRunResult(run) {
+    const failed = run.status !== 'SUCCESS';
+    $('#runModalBadge').html(' ' + App.runBadge(run.status));
+    $('#runResultBody').html(
+        '<div class="row g-2 mb-2">' +
+        '<div class="col-md-3"><span class="kv-label">版本</span><span class="mono">v' + run.version + '</span></div>' +
+        '<div class="col-md-3"><span class="kv-label">行数</span><span class="mono">' + run.rowCount + '</span></div>' +
+        '<div class="col-md-3"><span class="kv-label">耗时</span><span class="mono">' + App.fmtMs(run.durationMs) + '</span></div>' +
+        '<div class="col-md-3"><span class="kv-label">触发</span><span class="mono">' + run.triggerType + '</span></div>' +
+        '</div>' +
+        (run.assertMsg ? '<div class="alert ' + (failed ? 'alert-danger' : 'alert-success') + ' py-2">断言：' + App.escapeHtml(run.assertMsg) + '</div>' : '') +
+        (run.errorMsg ? '<div class="alert alert-danger py-2 sql-text">错误：' + App.escapeHtml(run.errorMsg) + '</div>' : '') +
+        '<div class="text-muted small mb-1">结果预览（前 20 行）</div>' +
+        '<pre class="border rounded bg-light p-2 sql-text" style="max-height:320px;overflow:auto">' + App.escapeHtml(App.prettyJson(run.resultHead)) + '</pre>');
+    new bootstrap.Modal('#runModal').show();
+    loadListQuietly();
 }
 
 function loadListQuietly() {
@@ -204,7 +216,7 @@ function openHistory(id) {
             return '<tr><td class="mono">v' + h.version + '</td>' +
                 '<td>' + App.badge(h.changeType, h.changeType === 'CREATE' ? 'success' : h.changeType === 'DISABLE' ? 'secondary' : 'info') + '</td>' +
                 '<td class="sql-cell" title="' + App.escapeHtml(h.sqlText || '') + '">' + App.escapeHtml(h.sqlText || '-') + '</td>' +
-                '<td>' + (h.assertType ? App.badge(h.assertType, 'info') : '-') + '</td>' +
+                '<td>' + (h.assertType ? App.badge(h.assertType + ' ' + h.assertOp + ' ' + h.assertValue, 'info') : '-') + '</td>' +
                 '<td class="mono">' + App.escapeHtml(h.cronExpr || '-') + '</td>' +
                 '<td>' + App.escapeHtml(h.changedBy || '-') + '</td>' +
                 '<td class="mono">' + App.fmtTime(h.changedAt) + '</td></tr>';

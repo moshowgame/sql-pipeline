@@ -13,8 +13,9 @@ spring:
     hikari:
       maximum-pool-size: 20
       pool-name: platform-meta-pool
-      # 平台元数据库默认 Schema（连接建立后设置 search_path，可经环境变量 DB_SCHEMA 覆盖）
-      schema: ${DB_SCHEMA:sql_pipeline}
+      # 平台元数据库默认 Schema（注意：schema 不是库名！库名由上面 url 的 DB_NAME 控制，
+      # 库 sql_pipeline 里的默认 schema 是 public。可用环境变量 DB_SCHEMA 覆盖）
+      schema: ${DB_SCHEMA:public}
   sql:
     init:
       # 幂等建表（CREATE TABLE IF NOT EXISTS），首次启动自动初始化

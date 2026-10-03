@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS sql_definition (
     sql_text      TEXT         NOT NULL,
     params_json   JSONB,
     assert_type   VARCHAR(16),
+    assert_op     VARCHAR(8),
+    assert_value  NUMERIC,
     assert_config JSONB,
     cron_expr     VARCHAR(64),
     timeout_sec   INT          NOT NULL DEFAULT 30,
@@ -52,9 +54,15 @@ CREATE TABLE IF NOT EXISTS sql_definition (
     updated_at    TIMESTAMP    NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_sql_def_conn ON sql_definition (conn_key);
+-- 兼容存量库：断言简化模型新增列（存量库上 CREATE TABLE IF NOT EXISTS 不会加新列）
+ALTER TABLE sql_definition ADD COLUMN IF NOT EXISTS assert_op VARCHAR(8);
+ALTER TABLE sql_definition ADD COLUMN IF NOT EXISTS assert_value NUMERIC;
 COMMENT ON TABLE  sql_definition           IS '健康检查 SQL 定义';
-COMMENT ON COLUMN sql_definition.params_json IS '默认参数值（JSON 数组，按 ? 顺序绑定）';
-COMMENT ON COLUMN sql_definition.assert_type IS 'VALUE | ROWCOUNT | RECORD';
+COMMENT ON COLUMN sql_definition.params_json IS '默认参数值（JSON 对象，key 对应 SQL 中 ${name} 占位符）';
+COMMENT ON COLUMN sql_definition.assert_type IS '断言目标：VALUE（第一行第一列）/ ROWS（返回行数）';
+COMMENT ON COLUMN sql_definition.assert_op   IS '断言操作符：== != > >= < <=';
+COMMENT ON COLUMN sql_definition.assert_value IS '断言期望值';
+COMMENT ON COLUMN sql_definition.assert_config IS '兼容保留：旧版 JSON 断言配置';
 COMMENT ON COLUMN sql_definition.version     IS '每次更新 +1';
 
 -- 6.2.3 健康检查 SQL 修改记录（版本快照）
@@ -72,6 +80,8 @@ CREATE TABLE IF NOT EXISTS sql_definition_history (
 );
 CREATE INDEX IF NOT EXISTS idx_sql_def_his ON sql_definition_history (sql_def_id, version);
 COMMENT ON TABLE sql_definition_history IS '健康检查 SQL 修改记录：CREATE | UPDATE | DISABLE';
+ALTER TABLE sql_definition_history ADD COLUMN IF NOT EXISTS assert_op VARCHAR(8);
+ALTER TABLE sql_definition_history ADD COLUMN IF NOT EXISTS assert_value NUMERIC;
 
 -- 6.2.4 健康检查执行记录
 CREATE TABLE IF NOT EXISTS health_check_run (

@@ -122,31 +122,40 @@ curl -s -X POST localhost:8080/api/connections/1/reload   # 热更新连接池
 
 ```bash
 # 创建（保存时即做 L1 只读校验；含断言与 Cron）
+# SQL 中的参数用 ${name} 占位，paramsJson 为 JSON 对象（key 对应占位符名）
+# 断言 = 断言类型 + 操作符 + 期望值：VALUE（第一行第一列）/ ROWS（返回行数）
 curl -s -X POST localhost:8080/api/health-checks -H 'Content-Type: application/json' -H 'X-Operator: admin' -d '{
-  "name": "演示库连通性", "connKey": "bizdb", "sqlText": "SELECT 1 AS ok",
-  "assertType": "VALUE", "assertConfig": "{\"type\":\"VALUE\",\"expr\":\"cell(0,0)\",\"op\":\"==\",\"value\":1}",
+  "name": "订单积压检查", "connKey": "bizdb",
+  "sqlText": "SELECT count(*) AS pending FROM t_order WHERE created_at >= ${date} AND status = ${status}",
+  "paramsJson": "{\"date\":\"2026-10-01\",\"status\":1}",
+  "assertType": "VALUE", "assertOp": ">=", "assertValue": 0,
   "cronExpr": "0 */5 * * * *", "timeoutSec": 10
 }'
+
+# 手动执行：params 可按名覆盖默认参数（未覆盖的用默认值）
+curl -s -X POST localhost:8080/api/health-checks/1/run \
+  -H 'Content-Type: application/json' -d '{"params":{"date":"2026-10-02"}}'
 
 # 尝试提交写操作会被拦截（SG0002）
 curl -s -X POST localhost:8080/api/health-checks -H 'Content-Type: application/json' -d '{
   "name": "bad", "connKey": "bizdb", "sqlText": "DELETE FROM release_demo_audit"
 }'
 
-curl -s -X POST localhost:8080/api/health-checks/1/run    # 手动执行
 curl -s 'localhost:8080/api/health-checks/1/runs?page=1&size=10'  # 执行记录
 curl -s localhost:8080/api/health-checks/1/history        # 修改记录（版本快照）
 ```
 
-断言配置（`assert_config`，JSONB）示例：
+断言配置（简化模型，三要素）：
 
-```jsonc
-{"type":"VALUE","expr":"cell(0,0)","op":"==","value":1}          // 也支持 expr=rowCount
-{"type":"ROWCOUNT","op":">=","value":1}
-{"type":"RECORD","mode":"ALL","rules":[{"field":"status","op":"not_null"},{"field":"type","op":"in","value":["A","B"]}]}
-```
+| 字段 | 取值 | 说明 |
+|---|---|---|
+| `assertType` | `VALUE` / `ROWS` | 返回值（第一行第一列）/ 返回行数；空 = 不断言 |
+| `assertOp` | `== != > >= < <=` | 操作符 |
+| `assertValue` | 数值 | 期望值，如 `0`、`100`、`1.5` |
 
-操作符：`== != > >= < <= not_null is_null in not_in regex`。Cron 为 Spring 6 段格式（秒 分 时 日 月 周）。
+例：`{"assertType":"ROWS","assertOp":"==","assertValue":0}` 即"行数必须为 0"；`{"assertType":"VALUE","assertOp":">=","assertValue":1}` 即"第一行第一列 ≥ 1"（非数值的实际值判 FAIL）。
+
+参数绑定：SQL 中用 `${name}` 命名占位符（如 `WHERE created_at >= ${date}`），`paramsJson` 为 JSON 对象 `{"date":"2026-10-01","status":1}`（缺省 `{}`）；保存与执行时都会校验每个占位符都有对应值；手动执行可传同名 key 覆盖。
 
 ### 发布 `/api/releases`
 

@@ -4,12 +4,12 @@
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO sql_definition (
-            name, conn_key, sql_text, params_json, assert_type, assert_config,
+            name, conn_key, sql_text, params_json, assert_type, assert_op, assert_value, assert_config,
             cron_expr, timeout_sec, enabled, version, created_by, created_at, updated_by, updated_at
         ) VALUES (
             #{name}, #{connKey}, #{sqlText},
             CAST(#{paramsJson,jdbcType=VARCHAR} AS jsonb),
-            #{assertType},
+            #{assertType}, #{assertOp}, #{assertValue},
             CAST(#{assertConfig,jdbcType=VARCHAR} AS jsonb),
             #{cronExpr}, #{timeoutSec}, #{enabled}, #{version},
             #{createdBy}, now(), #{updatedBy}, now()
@@ -23,6 +23,8 @@
             sql_text      = #{sqlText},
             params_json   = CAST(#{paramsJson,jdbcType=VARCHAR} AS jsonb),
             assert_type   = #{assertType},
+            assert_op     = #{assertOp},
+            assert_value  = #{assertValue},
             assert_config = CAST(#{assertConfig,jdbcType=VARCHAR} AS jsonb),
             cron_expr     = #{cronExpr},
             timeout_sec   = #{timeoutSec},
