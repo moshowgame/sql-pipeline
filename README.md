@@ -4,6 +4,9 @@ SQL 健康检查与发布编排平台：只读守卫（SqlGuard）、定时健�
 
 > 按技术设计文档 `tech_design.md`（v1.0）实现。**平台元数据库与目标业务库均以 PostgreSQL 为主**（一期不考虑 Oracle / MySQL）。
 
+## AUTHOR
+Powered by [Moshow郑锴](https://zhengkai.blog.csdn.net/)
+
 ## 功能总览
 
 | 模块 | 能力 |
