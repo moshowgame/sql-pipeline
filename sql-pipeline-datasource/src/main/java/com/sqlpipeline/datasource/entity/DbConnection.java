@@ -15,6 +15,8 @@ public class DbConnection {
     private String username;
     private String passwordEnc;
     private String driverClass;
+    /** 连接默认 Schema（空 = 驱动默认 search_path，通常为 public）；建池时经 Hikari setSchema 生效 */
+    private String defaultSchema;
     private Integer poolSize;
     private Integer connTimeoutMs;
     private Integer maxRows;

@@ -72,6 +72,11 @@ public class ConnectionService {
         if (patch.getMaxRows() != null) old.setMaxRows(patch.getMaxRows());
         if (patch.getQueryTimeoutS() != null) old.setQueryTimeoutS(patch.getQueryTimeoutS());
         if (patch.getEnabled() != null) old.setEnabled(patch.getEnabled());
+        if (patch.getDefaultSchema() != null) {
+            // 传空串表示清空 schema（回到驱动默认 search_path）
+            String schema = patch.getDefaultSchema().trim();
+            old.setDefaultSchema(schema.isEmpty() ? null : schema);
+        }
         if (hasText(plainPassword)) {
             old.setPasswordEnc(crypto.encrypt(plainPassword));
         }
@@ -99,6 +104,9 @@ public class ConnectionService {
         cfg.setUsername(e.getUsername());
         cfg.setPassword(crypto.decrypt(e.getPasswordEnc()));
         cfg.setDriverClassName(e.getDriverClass());
+        if (hasText(e.getDefaultSchema())) {
+            cfg.setSchema(e.getDefaultSchema().trim());
+        }
         cfg.setMaximumPoolSize(1);
         cfg.setMinimumIdle(1);
         cfg.setConnectionTimeout(e.getConnTimeoutMs() != null ? e.getConnTimeoutMs() : 5000);

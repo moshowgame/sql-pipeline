@@ -47,6 +47,7 @@ public class ConnectionController {
         entity.setJdbcUrl(req.jdbcUrl());
         entity.setUsername(req.username());
         entity.setDriverClass(req.driverClass());
+        entity.setDefaultSchema(req.defaultSchema());
         entity.setPoolSize(req.poolSize());
         entity.setConnTimeoutMs(req.connTimeoutMs());
         entity.setMaxRows(req.maxRows());
@@ -63,6 +64,7 @@ public class ConnectionController {
         patch.setJdbcUrl(req.jdbcUrl());
         patch.setUsername(req.username());
         patch.setDriverClass(req.driverClass());
+        patch.setDefaultSchema(req.defaultSchema());
         patch.setPoolSize(req.poolSize());
         patch.setConnTimeoutMs(req.connTimeoutMs());
         patch.setMaxRows(req.maxRows());

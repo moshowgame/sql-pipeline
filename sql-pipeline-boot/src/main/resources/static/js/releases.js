@@ -10,8 +10,9 @@ $(function () {
     App.bindOperator();
     $.when(App.api('GET', '/api/releases'), App.api('GET', '/api/connections'))
         .done(function (p, c) {
-            plans = p[0] || [];
-            connections = c[0] || [];
+            // App.api 的 Promise 已解包为 data 本体（数组），无需再取 [0]
+            plans = Array.isArray(p) ? p : [];
+            connections = Array.isArray(c) ? c : [];
             renderPlans();
         }).fail(function () {
             $('#planTable').html('<tr><td colspan="9" class="text-center text-muted py-4">加载失败</td></tr>');

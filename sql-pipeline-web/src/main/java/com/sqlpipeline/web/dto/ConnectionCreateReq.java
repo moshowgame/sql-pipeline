@@ -11,6 +11,7 @@ public record ConnectionCreateReq(
         @NotBlank String username,
         @NotBlank String password,
         String driverClass,
+        String defaultSchema,
         Integer poolSize,
         Integer connTimeoutMs,
         Integer maxRows,

@@ -4,11 +4,12 @@
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO db_connection (
-            conn_key, display_name, jdbc_url, username, password_enc, driver_class,
+            conn_key, display_name, jdbc_url, username, password_enc, driver_class, default_schema,
             pool_size, conn_timeout_ms, max_rows, query_timeout_s, enabled,
             created_by, created_at, updated_by, updated_at
         ) VALUES (
             #{connKey}, #{displayName}, #{jdbcUrl}, #{username}, #{passwordEnc}, #{driverClass},
+            CAST(#{defaultSchema,jdbcType=VARCHAR} AS VARCHAR),
             #{poolSize}, #{connTimeoutMs}, #{maxRows}, #{queryTimeoutS}, #{enabled},
             #{createdBy}, now(), #{updatedBy}, now()
         )
@@ -21,6 +22,7 @@
             username        = #{username},
             password_enc    = #{passwordEnc},
             driver_class    = #{driverClass},
+            default_schema  = #{defaultSchema},
             pool_size       = #{poolSize},
             conn_timeout_ms = #{connTimeoutMs},
             max_rows        = #{maxRows},

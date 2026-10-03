@@ -36,14 +36,14 @@
                 <thead class="table-light">
                 <tr>
                     <th>ID</th><th>connKey</th><th>名称</th><th>JDBC URL</th><th>用户名</th>
-                    <th>池/超时</th><th>maxRows</th><th>状态</th><th style="min-width:220px">操作</th>
+                    <th>Schema</th><th>池/超时</th><th>maxRows</th><th>状态</th><th style="min-width:220px">操作</th>
                 </tr>
                 </thead>
-                <tbody id="connTable"><tr><td colspan="9" class="text-center text-muted py-4">加载中…</td></tr></tbody>
+                <tbody id="connTable"><tr><td colspan="10" class="text-center text-muted py-4">加载中…</td></tr></tbody>
             </table>
         </div>
     </div>
-    <p class="text-muted small">说明：密码 AES-256-GCM 加密存储，接口仅返回掩码；编辑时密码留空表示保持不变；connKey 创建后不可修改；启停/删除均会热更新连接池，无需重启。</p>
+    <p class="text-muted small">说明：密码 AES-256-GCM 加密存储，接口仅返回掩码；编辑时密码留空表示保持不变；connKey 创建后不可修改；「默认 Schema」经 Hikari setSchema 在连接建立时设置 search_path（如需访问非默认 schema 的表，务必配置）；启停/删除均会热更新连接池，无需重启。</p>
 </div>
 
 <!-- 新建/编辑连接 -->
@@ -73,6 +73,11 @@
                     <div class="col-md-4">
                         <label class="form-label">用户名 <span class="text-danger">*</span></label>
                         <input id="fUsername" class="form-control form-control-sm" autocomplete="off">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">默认 Schema</label>
+                        <input id="fDefaultSchema" class="form-control form-control-sm mono" placeholder="public" maxlength="64">
+                        <div class="form-text">连接建立后设置 search_path，留空 = 驱动默认</div>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">密码 <span class="text-danger" id="pwdRequired">*</span></label>

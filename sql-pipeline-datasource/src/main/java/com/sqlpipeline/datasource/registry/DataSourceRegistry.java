@@ -22,6 +22,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.ToDoubleFunction;
 import javax.sql.DataSource;
 
+import static org.springframework.util.StringUtils.hasText;
+
 /**
  * 数据源注册与路由：按 connKey 管理 Hikari 连接池，支持运行期热更新。
  * 不使用 AbstractRoutingDataSource + ThreadLocal（ADR-02），避免线程池复用导致的上下文串号。
@@ -49,6 +51,10 @@ public class DataSourceRegistry implements DisposableBean {
         cfg.setUsername(e.getUsername());
         cfg.setPassword(crypto.decrypt(e.getPasswordEnc()));
         cfg.setDriverClassName(e.getDriverClass());
+        // 连接默认 Schema：Hikari 会在连接建立时设置 search_path
+        if (hasText(e.getDefaultSchema())) {
+            cfg.setSchema(e.getDefaultSchema().trim());
+        }
         cfg.setMaximumPoolSize(e.getPoolSize() != null ? e.getPoolSize() : 10);
         cfg.setConnectionTimeout(e.getConnTimeoutMs() != null ? e.getConnTimeoutMs() : 5000);
         cfg.setAutoCommit(true);

@@ -11,7 +11,10 @@ function loadSummary() {
         App.api('GET', '/api/releases'),
         $.getJSON('/actuator/health')
     ).done(function (conns, defs, plans, health) {
-        const connList = conns[0] || [], defList = defs[0] || [], planList = plans[0] || [];
+        // App.api 的 Promise 已解包为 data 本体（数组）；$.getJSON 的 jqXHR 仍按 (data,status,xhr) 传递
+        const connList = Array.isArray(conns) ? conns : [];
+        const defList = Array.isArray(defs) ? defs : [];
+        const planList = Array.isArray(plans) ? plans : [];
         const enabledConns = connList.filter(c => c.enabled === 1).length;
         const enabledDefs = defList.filter(d => d.enabled === 1).length;
         const running = planList.filter(p => p.status === 'RUNNING' || p.status === 'WAITING').length;

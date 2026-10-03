@@ -12,8 +12,9 @@ $(function () {
     App.bindOperator();
     $.when(App.api('GET', '/api/health-checks'), App.api('GET', '/api/connections'))
         .done(function (defs, conns) {
-            definitions = defs[0] || [];
-            connections = conns[0] || [];
+            // App.api 的 Promise 已解包为 data 本体（数组），无需再取 [0]
+            definitions = Array.isArray(defs) ? defs : [];
+            connections = Array.isArray(conns) ? conns : [];
             render();
         }).fail(function () {
             $('#defTable').html('<tr><td colspan="10" class="text-center text-muted py-4">加载失败</td></tr>');

@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS db_connection (
     username        VARCHAR(64)  NOT NULL,
     password_enc    VARCHAR(512) NOT NULL,
     driver_class    VARCHAR(128) NOT NULL DEFAULT 'org.postgresql.Driver',
+    default_schema  VARCHAR(64),
     pool_size       INT          NOT NULL DEFAULT 10,
     conn_timeout_ms INT          NOT NULL DEFAULT 5000,
     max_rows        INT          NOT NULL DEFAULT 1000,
@@ -25,8 +26,12 @@ CREATE TABLE IF NOT EXISTS db_connection (
 COMMENT ON TABLE  db_connection            IS '数据库连接定义';
 COMMENT ON COLUMN db_connection.conn_key   IS '平台内引用名';
 COMMENT ON COLUMN db_connection.password_enc IS 'AES-256-GCM 加密后的密码';
+COMMENT ON COLUMN db_connection.default_schema IS '连接默认 Schema（空=驱动默认 search_path），建池时经 Hikari setSchema 生效';
 COMMENT ON COLUMN db_connection.max_rows   IS '健康检查查询最大行数';
 COMMENT ON COLUMN db_connection.enabled    IS '1 启用 / 0 禁用（软删）';
+
+-- 兼容存量库：为旧版本表补 default_schema 列
+ALTER TABLE db_connection ADD COLUMN IF NOT EXISTS default_schema VARCHAR(64);
 
 -- 6.2.2 健康检查 SQL 定义
 CREATE TABLE IF NOT EXISTS sql_definition (
