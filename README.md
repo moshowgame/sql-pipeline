@@ -12,6 +12,13 @@ SQL 健康检查与发布编排平台：只读守卫（SqlGuard）、定时健�
 | 健康检查 | 只读 SQL（JSqlParser AST 级 SELECT-only 校验，保存与执行双重拦截 + `setReadOnly` 兜底）、三类断言（VALUE / ROWCOUNT / RECORD）、Spring Cron 动态调度、修改记录（版本快照）与执行记录 |
 | 发布编排 | 按 `release_YYYYMMDD/1..9` 数字目录顺序执行、每步目标库 / after_mode（CONTINUE / WAIT）/ 执行者可配置、CR Number + Remark 启动、单步重试（不触发后续编排）、全流程重跑（UAT 计时摘要）、目录缺号 / 不存在自动忽略、SSE 进度推送 |
 
+## SCREENCAP
+<image src="./screencap/index.png">
+<image src="./screencap/connections.png">
+<image src="./screencap/health_check_result.png">
+<image src="./screencap/health_check_edit.png">
+<image src="./screencap/release_plan.png">
+
 ## 模块结构（对齐设计文档 §17.2）
 
 ```
