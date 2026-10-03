@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>总览 - sql-pipeline</title>
+    <link rel="stylesheet" href="/lib/bootstrap-5.2.3/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<nav class="navbar navbar-expand navbar-dark bg-dark mb-4">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">⇄ sql-pipeline</a>
+        <ul class="navbar-nav me-auto">
+            <li class="nav-item"><a class="nav-link active" href="/">总览</a></li>
+            <li class="nav-item"><a class="nav-link" href="/connections.html">连接管理</a></li>
+            <li class="nav-item"><a class="nav-link" href="/health-checks.html">健康检查</a></li>
+            <li class="nav-item"><a class="nav-link" href="/releases.html">发布编排</a></li>
+        </ul>
+        <div class="d-flex align-items-center text-white-50">
+            <span class="me-2 small">操作者</span>
+            <input id="operatorInput" class="form-control form-control-sm" style="width:130px" placeholder="X-Operator">
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <h5 class="mb-3">平台总览</h5>
+    <div class="row g-3 mb-4" id="summaryCards"></div>
+
+    <div class="row g-3">
+        <div class="col-md-6">
+            <div class="card page-card">
+                <div class="card-header bg-white fw-bold">最近发布计划</div>
+                <div class="card-body p-0">
+                    <table class="table table-sm mb-0 align-middle">
+                        <thead class="table-light"><tr><th>ID</th><th>计划名</th><th>状态</th><th>操作人</th><th>开始时间</th></tr></thead>
+                        <tbody id="recentPlans"><tr><td colspan="5" class="text-center text-muted py-3">加载中…</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card page-card">
+                <div class="card-header bg-white fw-bold">平台信息</div>
+                <div class="card-body">
+                    <div class="mb-1"><span class="kv-label">健康接口</span><span class="mono" id="healthInfo">检查中…</span></div>
+                    <div class="mb-1"><span class="kv-label">元数据库</span><span class="text-muted">PostgreSQL（配置存于 sql_pipeline 库）</span></div>
+                    <div class="mb-1"><span class="kv-label">操作者身份</span><span class="text-muted">右上角输入，随请求头 X-Operator 传递；发布步骤可指定执行者账号</span></div>
+                    <div class="mb-1"><span class="kv-label">提示</span><span class="text-muted">目标业务库在「连接管理」中配置；健康检查 SQL 仅允许 SELECT；发布目录见 README 约定</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/lib/jquery/jquery-3.7.1.min.js"></script>
+<script src="/lib/bootstrap-5.2.3/js/bootstrap.bundle.min.js"></script>
+<script src="/js/common.js"></script>
+<script src="/js/dashboard.js"></script>
+</body>
+</html>

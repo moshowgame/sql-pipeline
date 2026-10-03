@@ -57,7 +57,20 @@ RELEASE_BASE_PATH=$(pwd)/sample/releases \
 java -jar sql-pipeline-boot/target/sql-pipeline-boot-1.0.0-SNAPSHOT.jar
 ```
 
-启动后访问 `http://localhost:8080`（API）、`http://localhost:8080/actuator/prometheus`（指标）。
+启动后访问 `http://localhost:8080`（Web 管理界面）、`http://localhost:8080/api/**`（REST API）、`http://localhost:8080/actuator/prometheus`（指标）。
+
+## Web 管理界面
+
+基于 **jQuery 3.7.1 + Bootstrap 5.2.3**（已内置于 `static/lib/`，离线可用），启动即用，无需单独部署前端：
+
+| 页面 | 功能 |
+|---|---|
+| `/`（总览） | 连接 / 健康检查 / 发布计划数量卡片、最近发布计划、平台健康状态 |
+| `/connections.html` | 连接 CRUD（密码留空=不变、connKey 不可改）、连通性测试、连接池重载、启停（热更新） |
+| `/health-checks.html` | 定义 CRUD（断言配置模板一键填入、客户端 JSON 校验）、手动执行并查看结果、执行记录分页、修改历史（版本快照）、启停调度 |
+| `/releases.html` | 计划列表与详情、创建（步骤编排配置 + 目录扫描预览）、凭 CR+备注启动、WAIT 人工继续、失败单步重试、全流程重跑、SQL 明细日志（按步骤过滤）、UAT 运行摘要、**SSE 实时刷新步骤/计划状态** |
+
+右上角「操作者」输入框对应请求头 `X-Operator`（localStorage 持久化）：发布步骤指定了执行者时，启动/继续/重试会以该身份校验。
 
 ## 配置说明
 

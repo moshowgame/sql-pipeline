@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>健康检查 - sql-pipeline</title>
+    <link rel="stylesheet" href="/lib/bootstrap-5.2.3/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<nav class="navbar navbar-expand navbar-dark bg-dark mb-4">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">⇄ sql-pipeline</a>
+        <ul class="navbar-nav me-auto">
+            <li class="nav-item"><a class="nav-link" href="/">总览</a></li>
+            <li class="nav-item"><a class="nav-link" href="/connections.html">连接管理</a></li>
+            <li class="nav-item"><a class="nav-link active" href="/health-checks.html">健康检查</a></li>
+            <li class="nav-item"><a class="nav-link" href="/releases.html">发布编排</a></li>
+        </ul>
+        <div class="d-flex align-items-center text-white-50">
+            <span class="me-2 small">操作者</span>
+            <input id="operatorInput" class="form-control form-control-sm" style="width:130px" placeholder="X-Operator">
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">健康检查（只读 SQL + 断言 + 定时调度）</h5>
+        <button class="btn btn-primary btn-sm" onclick="openCreate()">+ 新建健康检查</button>
+    </div>
+
+    <div class="card page-card">
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                <tr>
+                    <th>ID</th><th>名称</th><th>connKey</th><th>SQL</th><th>断言</th>
+                    <th>Cron</th><th>超时</th><th>版本</th><th>状态</th><th style="min-width:280px">操作</th>
+                </tr>
+                </thead>
+                <tbody id="defTable"><tr><td colspan="10" class="text-center text-muted py-4">加载中…</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+    <p class="text-muted small">说明：SQL 仅允许 SELECT（保存与执行双重 AST 校验）；Cron 为 Spring 6 段格式（秒 分 时 日 月 周），如 <code>0 */5 * * * *</code>；修改自动写版本快照。</p>
+</div>
+
+<!-- 新建/编辑 -->
+<div class="modal fade" id="defModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="defModalTitle">新建健康检查</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="defForm" class="row g-3">
+                    <input type="hidden" id="defId">
+                    <div class="col-md-5">
+                        <label class="form-label">名称 <span class="text-danger">*</span></label>
+                        <input id="dName" class="form-control form-control-sm" maxlength="128">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">连接（目标库）<span class="text-danger">*</span></label>
+                        <select id="dConnKey" class="form-select form-select-sm"></select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">超时(s)</label>
+                        <input id="dTimeout" type="number" class="form-control form-control-sm" value="30" min="1">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">状态</label>
+                        <select id="dEnabled" class="form-select form-select-sm">
+                            <option value="1">启用</option><option value="0">停用</option>
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">SQL（仅 SELECT）<span class="text-danger">*</span>　参数用 <code>?</code> 占位，顺序对应下方默认参数</label>
+                        <textarea id="dSql" class="form-control form-control-sm sql-text" rows="4" placeholder="SELECT count(*) AS total FROM t WHERE created_at > ?"></textarea>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">默认参数（JSON 数组，可空）</label>
+                        <textarea id="dParams" class="form-control form-control-sm mono" rows="1" placeholder='["2026-10-01"]'></textarea>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Cron 表达式（6 段，可空=不调度）</label>
+                        <input id="dCron" class="form-control form-control-sm mono" placeholder="0 */5 * * * *">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">断言类型（可空=不校验）</label>
+                        <select id="dAssertType" class="form-select form-select-sm">
+                            <option value="">无断言</option>
+                            <option value="VALUE">VALUE 标量比较</option>
+                            <option value="ROWCOUNT">ROWCOUNT 行数比较</option>
+                            <option value="RECORD">RECORD 记录级规则</option>
+                        </select>
+                    </div>
+                    <div class="col-12" id="assertConfigWrap">
+                        <label class="form-label">断言配置（JSON）</label>
+                        <div class="mb-1" id="assertTemplates"></div>
+                        <textarea id="dAssertConfig" class="form-control form-control-sm mono" rows="5"
+                                  placeholder='{"type":"VALUE","expr":"cell(0,0)","op":"==","value":1}'></textarea>
+                        <div class="form-text">操作符：== != &gt; &gt;= &lt; &lt;= not_null is_null in not_in regex；expr 支持 rowCount 与 cell(row,col)</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+                <button class="btn btn-primary btn-sm" onclick="saveDef()">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 手动执行结果 -->
+<div class="modal fade" id="runModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">执行结果 <span id="runModalBadge"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="runResultBody"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 执行记录 -->
+<div class="modal fade" id="runsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">执行记录 <span id="runsModalTitle" class="text-muted fs-6"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <table class="table table-sm table-hover align-middle">
+                    <thead class="table-light">
+                    <tr><th>时间</th><th>触发</th><th>状态</th><th>行数</th><th>耗时</th><th>断言</th><th>错误</th></tr>
+                    </thead>
+                    <tbody id="runsTable"></tbody>
+                </table>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="text-muted small" id="runsPagerInfo"></span>
+                    <div>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="runsPage(-1)">上一页</button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="runsPage(1)">下一页</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 修改历史 -->
+<div class="modal fade" id="historyModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">修改记录 <span id="historyModalTitle" class="text-muted fs-6"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <table class="table table-sm table-hover align-middle">
+                    <thead class="table-light">
+                    <tr><th>版本</th><th>类型</th><th>SQL</th><th>断言</th><th>Cron</th><th>修改人</th><th>时间</th></tr>
+                    </thead>
+                    <tbody id="historyTable"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/lib/jquery/jquery-3.7.1.min.js"></script>
+<script src="/lib/bootstrap-5.2.3/js/bootstrap.bundle.min.js"></script>
+<script src="/js/common.js"></script>
+<script src="/js/healthchecks.js"></script>
+</body>
+</html>

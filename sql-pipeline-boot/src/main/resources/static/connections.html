@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>连接管理 - sql-pipeline</title>
+    <link rel="stylesheet" href="/lib/bootstrap-5.2.3/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<nav class="navbar navbar-expand navbar-dark bg-dark mb-4">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">⇄ sql-pipeline</a>
+        <ul class="navbar-nav me-auto">
+            <li class="nav-item"><a class="nav-link" href="/">总览</a></li>
+            <li class="nav-item"><a class="nav-link active" href="/connections.html">连接管理</a></li>
+            <li class="nav-item"><a class="nav-link" href="/health-checks.html">健康检查</a></li>
+            <li class="nav-item"><a class="nav-link" href="/releases.html">发布编排</a></li>
+        </ul>
+        <div class="d-flex align-items-center text-white-50">
+            <span class="me-2 small">操作者</span>
+            <input id="operatorInput" class="form-control form-control-sm" style="width:130px" placeholder="X-Operator">
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">数据库连接（目标库 · PostgreSQL）</h5>
+        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#connModal" onclick="openCreate()">+ 新建连接</button>
+    </div>
+
+    <div class="card page-card">
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                <tr>
+                    <th>ID</th><th>connKey</th><th>名称</th><th>JDBC URL</th><th>用户名</th>
+                    <th>池/超时</th><th>maxRows</th><th>状态</th><th style="min-width:220px">操作</th>
+                </tr>
+                </thead>
+                <tbody id="connTable"><tr><td colspan="9" class="text-center text-muted py-4">加载中…</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+    <p class="text-muted small">说明：密码 AES-256-GCM 加密存储，接口仅返回掩码；编辑时密码留空表示保持不变；connKey 创建后不可修改；启停/删除均会热更新连接池，无需重启。</p>
+</div>
+
+<!-- 新建/编辑连接 -->
+<div class="modal fade" id="connModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="connModalTitle">新建连接</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="connForm" class="row g-3">
+                    <input type="hidden" id="connId">
+                    <div class="col-md-4">
+                        <label class="form-label">connKey <span class="text-danger">*</span></label>
+                        <input id="fConnKey" class="form-control form-control-sm" placeholder="如 bizdb" maxlength="64">
+                        <div class="form-text" id="connKeyHint">平台内唯一引用名，创建后不可改</div>
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">显示名称 <span class="text-danger">*</span></label>
+                        <input id="fDisplayName" class="form-control form-control-sm" maxlength="128">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">JDBC URL <span class="text-danger">*</span></label>
+                        <input id="fJdbcUrl" class="form-control form-control-sm mono" placeholder="jdbc:postgresql://host:5432/db">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">用户名 <span class="text-danger">*</span></label>
+                        <input id="fUsername" class="form-control form-control-sm" autocomplete="off">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">密码 <span class="text-danger" id="pwdRequired">*</span></label>
+                        <input id="fPassword" type="password" class="form-control form-control-sm" autocomplete="new-password">
+                        <div class="form-text" id="pwdHint">编辑时留空 = 保持原密码</div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Driver</label>
+                        <input id="fDriverClass" class="form-control form-control-sm mono" value="org.postgresql.Driver">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">poolSize</label>
+                        <input id="fPoolSize" type="number" class="form-control form-control-sm" value="10" min="1">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">connTimeout(ms)</label>
+                        <input id="fConnTimeout" type="number" class="form-control form-control-sm" value="5000" min="1000">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">maxRows</label>
+                        <input id="fMaxRows" type="number" class="form-control form-control-sm" value="1000" min="1">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">queryTimeout(s)</label>
+                        <input id="fQueryTimeout" type="number" class="form-control form-control-sm" value="30" min="1">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">状态</label>
+                        <select id="fEnabled" class="form-select form-select-sm">
+                            <option value="1">启用</option>
+                            <option value="0">停用</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+                <button class="btn btn-primary btn-sm" onclick="saveConn()">保存并注册连接池</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/lib/jquery/jquery-3.7.1.min.js"></script>
+<script src="/lib/bootstrap-5.2.3/js/bootstrap.bundle.min.js"></script>
+<script src="/js/common.js"></script>
+<script src="/js/connections.js"></script>
+</body>
+</html>

@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>发布编排 - sql-pipeline</title>
+    <link rel="stylesheet" href="/lib/bootstrap-5.2.3/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<nav class="navbar navbar-expand navbar-dark bg-dark mb-4">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">⇄ sql-pipeline</a>
+        <ul class="navbar-nav me-auto">
+            <li class="nav-item"><a class="nav-link" href="/">总览</a></li>
+            <li class="nav-item"><a class="nav-link" href="/connections.html">连接管理</a></li>
+            <li class="nav-item"><a class="nav-link" href="/health-checks.html">健康检查</a></li>
+            <li class="nav-item"><a class="nav-link active" href="/releases.html">发布编排</a></li>
+        </ul>
+        <div class="d-flex align-items-center text-white-50">
+            <span class="me-2 small">操作者</span>
+            <input id="operatorInput" class="form-control form-control-sm" style="width:130px" placeholder="X-Operator">
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">发布编排（release_YYYYMMDD/1..9 目录顺序执行）</h5>
+        <button class="btn btn-primary btn-sm" onclick="openCreate()">+ 创建计划</button>
+    </div>
+
+    <div class="card page-card">
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                <tr>
+                    <th>ID</th><th>计划名</th><th>状态</th><th>CR 单号</th><th>操作人</th>
+                    <th>开始时间</th><th>完成时间</th><th>重跑次数</th><th style="min-width:120px">操作</th>
+                </tr>
+                </thead>
+                <tbody id="planTable"><tr><td colspan="9" class="text-center text-muted py-4">加载中…</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 计划详情 -->
+    <div class="card page-card d-none" id="detailCard">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <div>
+                <span class="fw-bold" id="detailTitle">计划详情</span>
+                <span class="ms-2" id="detailStatus"></span>
+                <span class="ms-2" id="sseBadge"></span>
+            </div>
+            <div class="btn-group btn-group-sm">
+                <button class="btn btn-success" id="btnStart" onclick="openStart()">启动</button>
+                <button class="btn btn-warning text-dark" id="btnContinue" onclick="doContinue()">继续(Continue)</button>
+                <button class="btn btn-outline-primary" id="btnRerun" onclick="doRerun()">全流程重跑</button>
+                <button class="btn btn-outline-info" onclick="openLogs()">SQL 日志</button>
+                <button class="btn btn-outline-info" onclick="openSummaries()">运行摘要</button>
+                <button class="btn btn-outline-secondary" onclick="loadDetail(currentPlanId, true)">刷新</button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row g-2 mb-3" id="planInfo"></div>
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                <tr>
+                    <th>步骤</th><th>目录</th><th>连接</th><th>afterMode</th><th>执行者</th>
+                    <th>状态</th><th>重试</th><th>耗时</th><th>错误</th><th style="min-width:110px">操作</th>
+                </tr>
+                </thead>
+                <tbody id="stepTable"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 创建计划（含扫描预览） -->
+<div class="modal fade" id="createModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">创建发布计划</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">计划名（= base-path 下的目录名）<span class="text-danger">*</span></label>
+                        <input id="cPlanName" class="form-control form-control-sm mono" placeholder="release_20261003">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">默认连接（未单独配置的步骤使用）</label>
+                        <select id="cDefaultConn" class="form-select form-select-sm"></select>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <button class="btn btn-outline-info btn-sm" onclick="doScan()">扫描目录预览</button>
+                    </div>
+                </div>
+
+                <hr>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="fw-bold">步骤编排配置（可选；不配置默认 CONTINUE + 默认连接）</span>
+                    <button class="btn btn-outline-primary btn-sm" onclick="addStepRow()">+ 添加步骤</button>
+                </div>
+                <table class="table table-sm align-middle">
+                    <thead class="table-light">
+                    <tr><th style="width:90px">步骤号</th><th style="width:200px">连接</th><th style="width:140px">afterMode</th><th>执行者（可空）</th><th style="width:50px"></th></tr>
+                    </thead>
+                    <tbody id="stepConfigRows"></tbody>
+                </table>
+                <div id="scanPreview" class="mt-2"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+                <button class="btn btn-primary btn-sm" onclick="savePlan()">创建计划（DRAFT）</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 启动 -->
+<div class="modal fade" id="startModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">启动发布 <span id="startModalPlan" class="text-muted fs-6"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">CR 单号 <span class="text-danger">*</span></label>
+                    <input id="sCrNumber" class="form-control form-control-sm mono" placeholder="CR-20261003-001" maxlength="64">
+                </div>
+                <div class="mb-1">
+                    <label class="form-label">备注 <span class="text-danger">*</span></label>
+                    <textarea id="sRemark" class="form-control form-control-sm" rows="3" maxlength="512" placeholder="本次发布说明…"></textarea>
+                </div>
+                <div class="text-muted small">启动者： <span class="mono" id="startOperator"></span>（右上角可切换）。CONTINUE 步骤将连跑，WAIT 步骤停下等人工确认。</div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+                <button class="btn btn-success btn-sm" onclick="doStart()">启动</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- SQL 日志 -->
+<div class="modal fade" id="logsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">SQL 明细日志</h5>
+                <div class="ms-3">
+                    <select id="logsStepFilter" class="form-select form-select-sm d-inline-block" style="width:160px" onchange="loadLogs()">
+                        <option value="">全部步骤</option>
+                    </select>
+                </div>
+                <button type="button" class="btn-close ms-auto" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="max-height:60vh;overflow:auto">
+                <table class="table table-sm table-hover align-middle">
+                    <thead class="table-light">
+                    <tr><th>#</th><th>步骤</th><th>文件</th><th>SQL</th><th>状态</th><th>耗时</th><th>错误</th></tr>
+                    </thead>
+                    <tbody id="logsTable"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 运行摘要 -->
+<div class="modal fade" id="summaryModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">运行摘要（UAT 计时）</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <table class="table table-sm table-hover align-middle">
+                    <thead class="table-light">
+                    <tr><th>轮次</th><th>总耗时</th><th>开始</th><th>结束</th><th>操作人</th><th>各步耗时</th></tr>
+                    </thead>
+                    <tbody id="summaryTable"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/lib/jquery/jquery-3.7.1.min.js"></script>
+<script src="/lib/bootstrap-5.2.3/js/bootstrap.bundle.min.js"></script>
+<script src="/js/common.js"></script>
+<script src="/js/releases.js"></script>
+</body>
+</html>

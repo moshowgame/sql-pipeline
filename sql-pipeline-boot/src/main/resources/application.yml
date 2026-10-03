@@ -7,9 +7,9 @@ spring:
   datasource:
     # 平台元数据库（PostgreSQL）：连接定义、健康检查定义、发布计划等全部配置存于此库
     # stringtype=unspecified 便于 MyBatis 直接写 jsonb 列
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:sql_pipeline}
-    username: ${DB_USER:pipeline}
-    password: ${DB_PASSWORD:pipeline}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:postgres}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:root123}
     hikari:
       maximum-pool-size: 20
       pool-name: platform-meta-pool
@@ -32,7 +32,7 @@ management:
 sql-pipeline:
   crypto:
     # AES-256 密钥（Base64 的 32 字节），生成：openssl rand -base64 32
-    key: ${SQL_PIPELINE_AES_KEY:}
+    key: ${SQL_PIPELINE_AES_KEY:gqclw7YITwnF6PJ9L0FCmX5UFJcWfyZvviPg+Xv8+Sw=}
   release:
     # 发布目录根路径：其下每个 release_YYYYMMDD 目录为一个发布计划
     base-path: ${RELEASE_BASE_PATH:./data/releases}

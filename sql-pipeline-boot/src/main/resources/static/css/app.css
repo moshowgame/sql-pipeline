@@ -1,0 +1,48 @@
+/* sql-pipeline 管理界面公共样式 */
+body {
+    background-color: #f5f7fa;
+    font-size: .9rem;
+}
+
+.navbar-brand { font-weight: 700; letter-spacing: .5px; }
+
+.page-card {
+    border: 0;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .08);
+    margin-bottom: 1rem;
+}
+
+.table > :not(caption) > * > * { padding: .45rem .6rem; }
+
+.sql-text {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .82rem;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.sql-cell {
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .8rem;
+}
+
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .82rem; }
+
+.kv-label { color: #6c757d; min-width: 96px; display: inline-block; }
+
+/* 时间线样式的步骤状态点 */
+.step-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 6px;
+}
+
+.toast-container { z-index: 2000; }
+
+.dropdown-menu .sql-preview { max-width: 420px; }
