@@ -72,6 +72,15 @@ java -jar sql-pipeline-boot/target/sql-pipeline-boot-1.0.0-SNAPSHOT.jar
 
 右上角「操作者」输入框对应请求头 `X-Operator`（localStorage 持久化）：发布步骤指定了执行者时，启动/继续/重试会以该身份校验。
 
+## 国际化（i18n）
+
+界面与后端错误消息支持 **English（默认）/ 简体中文**，导航栏右侧下拉切换：
+
+- 前端：集中式字典 `static/js/i18n.js`（`I18N.t(key, params)`），页面元素通过 `data-i18n` / `data-i18n-placeholder` / `data-i18n-title` 属性渲染；语言偏好存 localStorage，默认英文。
+- 后端：标准 Spring `MessageSource`（`messages.properties` 英文默认 + `messages_zh.properties` 中文），所有 `BizException` 支持 messageKey + args，由 `GlobalExceptionHandler` 按当前 locale 渲染。
+- 语言选择同步机制：前端切换时写入 `LANG` Cookie；后端由 `CookieLocaleResolver`（默认 `Locale.ENGLISH`）+ `LocaleChangeInterceptor`（支持 `?lang=zh`）解析。
+- 新增文案：前端在 i18n.js 两个字典中补同名 key；后端在两份 messages 文件中新增 `error.*` 键，抛出时使用 `BizException.i18n(ErrorCode.X, "error.xxx", args...)`。
+
 ## 配置说明
 
 | 配置 | 默认值 | 说明 |

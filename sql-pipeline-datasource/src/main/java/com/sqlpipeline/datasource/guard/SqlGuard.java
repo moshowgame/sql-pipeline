@@ -20,7 +20,7 @@ public class SqlGuard {
     public void assertSelectOnly(String rawSql) {
         List<String> statements = SqlSplitter.split(rawSql);
         if (statements.isEmpty()) {
-            throw new SqlGuardException(ErrorCode.SG_PARSE_FAILED, "SQL 为空");
+            throw SqlGuardException.i18n(ErrorCode.SG_PARSE_FAILED, "error.sg.empty");
         }
         for (String stmt : statements) {
             assertSingleSelectOnly(stmt);
@@ -32,12 +32,12 @@ public class SqlGuard {
         try {
             parsed = CCJSqlParserUtil.parse(stmt);
         } catch (JSQLParserException e) {
-            throw new SqlGuardException(ErrorCode.SG_PARSE_FAILED,
-                    "SQL 解析失败，拒绝执行: " + rootMessage(e));
+            throw SqlGuardException.i18n(ErrorCode.SG_PARSE_FAILED,
+                    "error.sg.parseFailed", rootMessage(e));
         }
         if (!(parsed instanceof Select select)) {
-            throw new SqlGuardException(ErrorCode.SG_NON_SELECT,
-                    "只允许 SELECT，检测到: " + parsed.getClass().getSimpleName());
+            throw SqlGuardException.i18n(ErrorCode.SG_NON_SELECT,
+                    "error.sg.nonSelect", parsed.getClass().getSimpleName());
         }
         assertNoForbiddenClause(select);
     }
@@ -45,19 +45,18 @@ public class SqlGuard {
     private void assertNoForbiddenClause(Select select) {
         String s = select.toString().toLowerCase();
         if (s.contains("for update")) {
-            throw new SqlGuardException(ErrorCode.SG_FORBIDDEN_CLAUSE, "不允许 FOR UPDATE");
+            throw SqlGuardException.i18n(ErrorCode.SG_FORBIDDEN_CLAUSE, "error.sg.forUpdate");
         }
         if (s.contains("into outfile")) {
-            throw new SqlGuardException(ErrorCode.SG_FORBIDDEN_CLAUSE, "不允许 INTO OUTFILE");
+            throw SqlGuardException.i18n(ErrorCode.SG_FORBIDDEN_CLAUSE, "error.sg.intoOutfile");
         }
         if (s.contains("into dumpfile")) {
-            throw new SqlGuardException(ErrorCode.SG_FORBIDDEN_CLAUSE, "不允许 INTO DUMPFILE");
+            throw SqlGuardException.i18n(ErrorCode.SG_FORBIDDEN_CLAUSE, "error.sg.intoDumpfile");
         }
         if (select instanceof PlainSelect ps) {
             var intoTables = ps.getIntoTables();
             if (intoTables != null && !intoTables.isEmpty()) {
-                throw new SqlGuardException(ErrorCode.SG_FORBIDDEN_CLAUSE,
-                        "不允许 SELECT ... INTO（PostgreSQL 中会创建表）");
+                throw SqlGuardException.i18n(ErrorCode.SG_FORBIDDEN_CLAUSE, "error.sg.selectInto");
             }
         }
     }

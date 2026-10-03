@@ -129,7 +129,7 @@ public class AlertService {
     public NotifyLog testChannel(Long channelId) {
         NotifyChannel channel = channelMapper.selectById(channelId);
         if (channel == null) {
-            throw new BizException(ErrorCode.SYS_PARAM_INVALID, "告警通道不存在: " + channelId);
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.notify.channelNotFound", channelId);
         }
         Map<String, Object> payload = buildPayload(AlertEvents.TEST, "INFO",
                 "sql-pipeline 测试事件", "通道 [" + channel.getName() + "] 连通性测试", Map.of());

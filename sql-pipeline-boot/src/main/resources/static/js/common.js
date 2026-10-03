@@ -105,7 +105,7 @@ window.App = {
         $input.on('change', function () {
             App.operator = $(this).val().trim() || 'admin';
             localStorage.setItem('operator', App.operator);
-            App.toast('操作者已切换为 ' + App.operator);
+            App.toast(I18N.t('toast.operatorSwitched', { name: App.operator }));
         });
     }
 };
@@ -113,10 +113,10 @@ window.App = {
 // 全局兜底：HTTP 层错误（4xx/5xx）统一 toast
 $(document).ajaxError(function (event, xhr) {
     if (xhr && xhr.responseJSON && xhr.responseJSON.code) return; // 业务错误已在 App.api 内提示
-    let msg = '请求失败: ' + (xhr && xhr.status ? xhr.status : 'network error');
+    let msg = 'HTTP ' + (xhr && xhr.status ? xhr.status : 'error');
     try {
         const r = JSON.parse(xhr.responseText);
         if (r && r.message) msg = '[' + r.code + '] ' + r.message;
     } catch (e) { /* ignore */ }
-    App.toast(msg, 'danger');
+    App.toast(I18N.t('toast.requestFailed', { msg: msg }), 'danger');
 });

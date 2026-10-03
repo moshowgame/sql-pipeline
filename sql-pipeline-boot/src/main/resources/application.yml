@@ -26,6 +26,12 @@ mybatis:
   configuration:
     map-underscore-to-camel-case: true
 
+spring.messages:
+  basename: messages
+  encoding: UTF-8
+  # 缺失 key 时回退到 messages.properties（英文），不跟随系统语言
+  fallback-to-system-locale: false
+
 management:
   endpoints:
     web:

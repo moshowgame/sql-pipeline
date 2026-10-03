@@ -5,7 +5,10 @@ import com.sqlpipeline.common.error.ErrorCode;
 import com.sqlpipeline.common.exception.BizException;
 import com.sqlpipeline.common.exception.SqlGuardException;
 import jakarta.validation.ConstraintViolationException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -15,19 +18,31 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @Slf4j
 @RestControllerAdvice
+@RequiredArgsConstructor
 public class GlobalExceptionHandler {
+
+    private final MessageSource messageSource;
+
+    /** 有 messageKey 的异常按当前 locale 渲染；否则使用原始消息。 */
+    private String resolve(BizException e) {
+        if (e.getMessageKey() == null) {
+            return e.getMessage();
+        }
+        return messageSource.getMessage(e.getMessageKey(), e.getArgs(), e.getMessage(),
+                LocaleContextHolder.getLocale());
+    }
 
     @ExceptionHandler(SqlGuardException.class)
     public ResponseEntity<R<Void>> handleGuard(SqlGuardException e) {
         // 拦截事件业务层已有 WARN 日志，这里按 4xx 返回
         return ResponseEntity.status(e.getErrorCode().getHttpStatus())
-                .body(R.fail(e.getErrorCode().getCode(), e.getMessage()));
+                .body(R.fail(e.getErrorCode().getCode(), resolve(e)));
     }
 
     @ExceptionHandler(BizException.class)
     public ResponseEntity<R<Void>> handleBiz(BizException e) {
         return ResponseEntity.status(e.getErrorCode().getHttpStatus())
-                .body(R.fail(e.getErrorCode().getCode(), e.getMessage()));
+                .body(R.fail(e.getErrorCode().getCode(), resolve(e)));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

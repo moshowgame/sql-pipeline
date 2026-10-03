@@ -28,7 +28,7 @@ public final class JsonUtils {
         try {
             return MAPPER.writeValueAsString(obj);
         } catch (JsonProcessingException e) {
-            throw new BizException(ErrorCode.SYS_INTERNAL, "JSON 序列化失败", e);
+            throw BizException.i18n(ErrorCode.SYS_INTERNAL, "error.json.serializeFailed", e);
         }
     }
 
@@ -40,7 +40,7 @@ public final class JsonUtils {
         try {
             return MAPPER.readValue(json, type);
         } catch (JsonProcessingException e) {
-            throw new BizException(errorOnFail, "JSON 解析失败: " + e.getOriginalMessage());
+            throw BizException.i18n(errorOnFail, "error.json.parseFailed", e.getOriginalMessage());
         }
     }
 
@@ -51,7 +51,7 @@ public final class JsonUtils {
         try {
             return MAPPER.readValue(json, type);
         } catch (JsonProcessingException e) {
-            throw new BizException(errorOnFail, "JSON 解析失败: " + e.getOriginalMessage());
+            throw BizException.i18n(errorOnFail, "error.json.parseFailed", e.getOriginalMessage());
         }
     }
 
@@ -64,7 +64,7 @@ public final class JsonUtils {
             return MAPPER.readValue(json, new TypeReference<>() {
             });
         } catch (JsonProcessingException e) {
-            throw new BizException(errorOnFail, "JSON 数组解析失败: " + e.getOriginalMessage());
+            throw BizException.i18n(errorOnFail, "error.json.arrayParseFailed", e.getOriginalMessage());
         }
     }
 

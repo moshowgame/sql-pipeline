@@ -47,8 +47,8 @@ public final class SqlParams {
         while (m.find()) {
             String name = m.group(1);
             if (values == null || !values.containsKey(name)) {
-                throw new BizException(ErrorCode.HC_CONFIG_INVALID,
-                        "SQL 占位符 ${" + name + "} 在参数中缺少对应值");
+                throw BizException.i18n(ErrorCode.HC_CONFIG_INVALID,
+                        "error.hc.placeholderMissing", "${" + name + "}");
             }
             params.add(values.get(name));
             m.appendReplacement(sb, "?");

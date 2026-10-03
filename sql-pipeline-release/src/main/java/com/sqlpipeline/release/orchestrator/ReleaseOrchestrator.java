@@ -95,13 +95,13 @@ public class ReleaseOrchestrator {
         validateConnKey(defaultConnKey);
         for (StepConfig c : stepConfigs == null ? List.<StepConfig>of() : stepConfigs) {
             if (c.stepNo() == null || c.stepNo() < 1) {
-                throw new BizException(ErrorCode.SYS_PARAM_INVALID, "步骤配置缺少合法 stepNo: " + c);
+                throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.stepNoInvalid", String.valueOf(c));
             }
             validateConnKey(c.connKey());
             if (hasText(c.afterMode()) && !AfterMode.CONTINUE.name().equalsIgnoreCase(c.afterMode())
                     && !AfterMode.WAIT.name().equalsIgnoreCase(c.afterMode())) {
-                throw new BizException(ErrorCode.SYS_PARAM_INVALID,
-                        "afterMode 只允许 CONTINUE/WAIT: " + c.afterMode());
+                throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID,
+                        "error.rl.afterModeInvalid", c.afterMode());
             }
         }
         ReleasePlan plan = new ReleasePlan();
@@ -154,8 +154,8 @@ public class ReleaseOrchestrator {
         try {
             ReleasePlan plan = requirePlan(planId);
             if (!PlanStatus.WAITING.name().equals(plan.getStatus())) {
-                throw new BizException(ErrorCode.RL_NO_WAITING_STEP,
-                        "计划当前状态为 " + plan.getStatus() + "，仅 WAITING 可继续");
+                throw BizException.i18n(ErrorCode.RL_NO_WAITING_STEP,
+                        "error.rl.notWaiting", plan.getStatus());
             }
             ReleaseStep waiting = stepMapper.selectWaiting(planId);
             if (waiting != null) {
@@ -189,11 +189,11 @@ public class ReleaseOrchestrator {
             requirePlan(planId);
             ReleaseStep step = stepMapper.selectByNo(planId, stepNo);
             if (step == null) {
-                throw new BizException(ErrorCode.RL_STEP_NOT_FOUND, "步骤不存在: " + stepNo);
+                throw BizException.i18n(ErrorCode.RL_STEP_NOT_FOUND, "error.rl.stepNotFound", stepNo);
             }
             if (!StepStatus.FAIL.name().equals(step.getStatus())) {
-                throw new BizException(ErrorCode.RL_STEP_NOT_RETRYABLE,
-                        "步骤 " + stepNo + " 状态为 " + step.getStatus() + "，仅 FAIL 可重试");
+                throw BizException.i18n(ErrorCode.RL_STEP_NOT_RETRYABLE,
+                        "error.rl.stepNotRetryable", stepNo, step.getStatus());
             }
             assertExecutor(step, operator);
             stepMapper.incrementRetry(step.getId());
@@ -216,7 +216,7 @@ public class ReleaseOrchestrator {
         try {
             ReleasePlan plan = requirePlan(planId);
             if (PlanStatus.RUNNING.name().equals(plan.getStatus())) {
-                throw new BizException(ErrorCode.RL_PLAN_ALREADY_STARTED, "计划运行中，无法重跑");
+                throw BizException.i18n(ErrorCode.RL_PLAN_ALREADY_STARTED, "error.rl.rerunNotAllowed");
             }
             recordSummary(plan, plan.getRerunCount() + 1);
             stepMapper.deleteByPlan(planId);
@@ -306,8 +306,8 @@ public class ReleaseOrchestrator {
     private void startInternal(Long planId, String crNumber, String remark, String operator) {
         ReleasePlan plan = requirePlan(planId);
         if (!PlanStatus.DRAFT.name().equals(plan.getStatus())) {
-            throw new BizException(ErrorCode.RL_PLAN_ALREADY_STARTED,
-                    "计划当前状态为 " + plan.getStatus() + "，仅 DRAFT 可启动");
+            throw BizException.i18n(ErrorCode.RL_PLAN_ALREADY_STARTED,
+                    "error.rl.notDraft", plan.getStatus());
         }
         List<ScannedStep> scanned = scanner.scan(resolvePlanDir(plan.getBasePath(), plan.getPlanName()));
         if (scanned.isEmpty()) {
@@ -323,7 +323,7 @@ public class ReleaseOrchestrator {
             StepConfig c = cfgs.get(s.no());
             String connKey = c != null && hasText(c.connKey()) ? c.connKey() : plan.getDefaultConnKey();
             if (!hasText(connKey)) {
-                throw new BizException(ErrorCode.SYS_PARAM_INVALID, "步骤 " + s.no() + " 未配置目标库(connKey)");
+                throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.connRequired", s.no());
             }
             validateConnKey(connKey);
             ReleaseStep step = new ReleaseStep();
@@ -546,9 +546,8 @@ public class ReleaseOrchestrator {
 
     private void assertExecutor(ReleaseStep step, String operator) {
         if (hasText(step.getExecutor()) && !step.getExecutor().equals(operator)) {
-            throw new BizException(ErrorCode.RL_NOT_EXECUTOR,
-                    "步骤 " + step.getStepNo() + " 的指定执行者为 " + step.getExecutor()
-                            + "，当前操作者: " + operator);
+            throw BizException.i18n(ErrorCode.RL_NOT_EXECUTOR,
+                    "error.rl.notExecutor", step.getStepNo(), step.getExecutor(), operator);
         }
     }
 
@@ -557,7 +556,7 @@ public class ReleaseOrchestrator {
             return;
         }
         if (connectionMapper.selectByKey(connKey) == null) {
-            throw new BizException(ErrorCode.DS_NOT_FOUND, "连接不存在: " + connKey);
+            throw BizException.i18n(ErrorCode.DS_NOT_FOUND, "error.ds.notFound", connKey);
         }
     }
 
@@ -567,25 +566,25 @@ public class ReleaseOrchestrator {
         try {
             return Files.exists(base) ? base.toRealPath() : base.toAbsolutePath().normalize();
         } catch (IOException e) {
-            throw new BizException(ErrorCode.SYS_PARAM_INVALID,
-                    "release.base-path 无法解析: " + properties.getBasePath());
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID,
+                    "error.rl.basePathInvalid", properties.getBasePath());
         }
     }
 
     private Path resolvePlanDir(String basePath, String planName) {
         if (!PLAN_NAME.matcher(planName).matches()) {
-            throw new BizException(ErrorCode.SYS_PARAM_INVALID,
-                    "计划名只允许字母、数字、._-: " + planName);
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID,
+                    "error.rl.planNameInvalid", planName);
         }
         Path base = Paths.get(basePath);
         try {
             base = Files.exists(base) ? base.toRealPath() : base.toAbsolutePath().normalize();
         } catch (IOException e) {
-            throw new BizException(ErrorCode.SYS_PARAM_INVALID, "base-path 无法解析: " + basePath);
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.basePathInvalid", basePath);
         }
         Path target = base.resolve(planName).normalize();
         if (!target.startsWith(base)) {
-            throw new BizException(ErrorCode.SYS_PARAM_INVALID, "非法路径: " + planName);
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.pathInvalid", planName);
         }
         return target;
     }
@@ -646,7 +645,7 @@ public class ReleaseOrchestrator {
     private ReleasePlan requirePlan(Long planId) {
         ReleasePlan plan = planMapper.selectById(planId);
         if (plan == null) {
-            throw new BizException(ErrorCode.RL_PLAN_NOT_FOUND, "发布计划不存在: " + planId);
+            throw BizException.i18n(ErrorCode.RL_PLAN_NOT_FOUND, "error.rl.planNotFound", planId);
         }
         return plan;
     }

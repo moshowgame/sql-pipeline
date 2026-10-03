@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>健康检查 - sql-pipeline</title>
+    <title>Health Checks - sql-pipeline</title>
     <link rel="stylesheet" href="/lib/bootstrap-5.2.3/css/bootstrap.min.css">
     <link rel="stylesheet" href="/css/app.css">
 </head>
@@ -12,14 +12,14 @@
     <div class="container-fluid">
         <a class="navbar-brand" href="/">⇄ sql-pipeline</a>
         <ul class="navbar-nav me-auto">
-            <li class="nav-item"><a class="nav-link" href="/">总览</a></li>
-            <li class="nav-item"><a class="nav-link" href="/connections.html">连接管理</a></li>
-            <li class="nav-item"><a class="nav-link active" href="/health-checks.html">健康检查</a></li>
-            <li class="nav-item"><a class="nav-link" href="/releases.html">发布编排</a></li>
-            <li class="nav-item"><a class="nav-link" href="/notify.html">告警通知</a></li>
+            <li class="nav-item"><a class="nav-link" href="/" data-i18n="nav.dashboard">Dashboard</a></li>
+            <li class="nav-item"><a class="nav-link" href="/connections.html" data-i18n="nav.connections">Connections</a></li>
+            <li class="nav-item"><a class="nav-link active" href="/health-checks.html" data-i18n="nav.healthChecks">Health Checks</a></li>
+            <li class="nav-item"><a class="nav-link" href="/releases.html" data-i18n="nav.releases">Releases</a></li>
+            <li class="nav-item"><a class="nav-link" href="/notify.html" data-i18n="nav.notify">Alerts</a></li>
         </ul>
         <div class="d-flex align-items-center text-white-50">
-            <span class="me-2 small">操作者</span>
+            <span class="me-2 small" data-i18n="nav.operator">Operator</span>
             <input id="operatorInput" class="form-control form-control-sm" style="width:130px" placeholder="X-Operator">
         </div>
     </div>
@@ -27,8 +27,8 @@
 
 <div class="container">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h5 class="mb-0">健康检查（只读 SQL + 断言 + 定时调度）</h5>
-        <button class="btn btn-primary btn-sm" onclick="openCreate()">+ 新建健康检查</button>
+        <h5 class="mb-0" data-i18n="hc.title">Health Checks</h5>
+        <button class="btn btn-primary btn-sm" onclick="openCreate()" data-i18n="hc.create">+ New Health Check</button>
     </div>
 
     <div class="card page-card">
@@ -36,15 +36,23 @@
             <table class="table table-hover mb-0 align-middle">
                 <thead class="table-light">
                 <tr>
-                    <th>ID</th><th>名称</th><th>connKey</th><th>SQL</th><th>断言</th>
-                    <th>Cron</th><th>超时</th><th>版本</th><th>状态</th><th style="min-width:280px">操作</th>
+                    <th>ID</th>
+                    <th data-i18n="hc.col.name">Name</th>
+                    <th>connKey</th>
+                    <th>SQL</th>
+                    <th data-i18n="hc.col.assert">Assert</th>
+                    <th>Cron</th>
+                    <th data-i18n="hc.col.timeout">Timeout</th>
+                    <th data-i18n="hc.col.version">Version</th>
+                    <th data-i18n="common.status">Status</th>
+                    <th style="min-width:280px" data-i18n="common.actions">Actions</th>
                 </tr>
                 </thead>
-                <tbody id="defTable"><tr><td colspan="10" class="text-center text-muted py-4">加载中…</td></tr></tbody>
+                <tbody id="defTable"><tr><td colspan="10" class="text-center text-muted py-4" data-i18n="common.loading">Loading…</td></tr></tbody>
             </table>
         </div>
     </div>
-    <p class="text-muted small">说明：SQL 仅允许 SELECT（保存与执行双重 AST 校验）；Cron 为 Spring 6 段格式（秒 分 时 日 月 周），如 <code>0 */5 * * * *</code>；修改自动写版本快照。</p>
+    <p class="text-muted small" data-i18n="hc.footer.note"></p>
 </div>
 
 <!-- 新建/编辑 -->
@@ -52,72 +60,73 @@
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="defModalTitle">新建健康检查</h5>
+                <h5 class="modal-title" id="defModalTitle"></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <form id="defForm" class="row g-3">
                     <input type="hidden" id="defId">
                     <div class="col-md-5">
-                        <label class="form-label">名称 <span class="text-danger">*</span></label>
+                        <label class="form-label"><span data-i18n="hc.col.name">Name</span> <span class="text-danger">*</span></label>
                         <input id="dName" class="form-control form-control-sm" maxlength="128">
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label">连接（目标库）<span class="text-danger">*</span></label>
+                        <label class="form-label" data-i18n="hc.field.conn">Connection (target DB)</label> <span class="text-danger">*</span>
                         <select id="dConnKey" class="form-select form-select-sm"></select>
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">超时(s)</label>
+                        <label class="form-label" data-i18n="hc.field.timeout">Timeout(s)</label>
                         <input id="dTimeout" type="number" class="form-control form-control-sm" value="30" min="1">
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">状态</label>
+                        <label class="form-label" data-i18n="common.status">Status</label>
                         <select id="dEnabled" class="form-select form-select-sm">
-                            <option value="1">启用</option><option value="0">停用</option>
+                            <option value="1" data-i18n="common.enable">Enable</option>
+                            <option value="0" data-i18n="common.disable">Disable</option>
                         </select>
                     </div>
                     <div class="col-12">
-                        <label class="form-label">SQL（仅 SELECT）<span class="text-danger">*</span>　参数用 <code>${name}</code> 占位，如 <code>${date}</code>、<code>${status}</code></label>
+                        <label class="form-label" data-i18n="hc.field.sql"></label>
                         <textarea id="dSql" class="form-control form-control-sm sql-text" rows="4"
                                   placeholder="SELECT count(*) AS total FROM t WHERE created_at >= ${date} AND status = ${status}"></textarea>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label">默认参数（JSON 对象，可空）</label>
-                        <textarea id="dParams" class="form-control form-control-sm mono" rows="1" placeholder='{"date":"2026-10-01","status":1}'></textarea>
-                        <div class="form-text">key 对应 SQL 中的 ${name}；手动执行时可临时覆盖</div>
+                        <label class="form-label" data-i18n="hc.field.params">Default Params (JSON object, optional)</label>
+                        <textarea id="dParams" class="form-control form-control-sm mono" rows="1" data-i18n-placeholder="hc.paramsPlaceholder"></textarea>
+                        <div class="form-text" data-i18n="hc.field.paramsHint"></div>
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label">Cron 表达式（6 段，可空=不调度）</label>
-                        <input id="dCron" class="form-control form-control-sm mono" placeholder="0 */5 * * * *">
+                        <label class="form-label" data-i18n="hc.field.cron">Cron</label>
+                        <input id="dCron" class="form-control form-control-sm mono" data-i18n-placeholder="hc.field.cronPlaceholder">
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label">断言类型（可空=不校验）</label>
+                        <label class="form-label" data-i18n="hc.field.assertType">Assert Type</label>
                         <select id="dAssertType" class="form-select form-select-sm">
-                            <option value="">无断言</option>
-                            <option value="VALUE">返回值（第一行第一列）</option>
-                            <option value="ROWS">返回行数</option>
+                            <option value="" data-i18n="hc.assertNone">No assert</option>
+                            <option value="VALUE" data-i18n="hc.assertValue">Return value</option>
+                            <option value="ROWS" data-i18n="hc.assertRows">Row count</option>
                         </select>
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">操作符</label>
+                        <label class="form-label" data-i18n="hc.field.assertOp">Operator</label>
                         <select id="dAssertOp" class="form-select form-select-sm">
-                            <option value="==">= 等于</option>
-                            <option value="!=">!= 不等于</option>
-                            <option value=">">&gt; 大于</option>
-                            <option value=">=">&gt;= 大于等于</option>
-                            <option value="<">&lt; 小于</option>
-                            <option value="<=">&lt;= 小于等于</option>
+                            <option value="==" data-i18n="hc.op.eq">= equals</option>
+                            <option value="!=" data-i18n="hc.op.ne">!= not equal</option>
+                            <option value=">" data-i18n="hc.op.gt">&gt; greater</option>
+                            <option value=">=" data-i18n="hc.op.gte">&gt;= greater or equal</option>
+                            <option value="<" data-i18n="hc.op.lt">&lt; less</option>
+                            <option value="<=" data-i18n="hc.op.lte">&lt;= less or equal</option>
                         </select>
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">期望值</label>
-                        <input id="dAssertValue" type="number" step="any" class="form-control form-control-sm" placeholder="如 0 / 100">
+                        <label class="form-label" data-i18n="hc.field.assertValue">Expected Value</label>
+                        <input id="dAssertValue" type="number" step="any" class="form-control form-control-sm" data-i18n-placeholder="hc.field.assertValuePlaceholder">
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">取消</button>
-                <button class="btn btn-primary btn-sm" onclick="saveDef()">保存</button>
+                <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-primary btn-sm" onclick="saveDef()" data-i18n="common.save">Save</button>
             </div>
         </div>
     </div>
@@ -128,17 +137,17 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">执行健康检查 <span id="runParamsTitle" class="text-muted fs-6"></span></h5>
+                <h5 class="modal-title"><span data-i18n="hc.runModal.title">Run Health Check</span> <span id="runParamsTitle" class="text-muted fs-6"></span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <label class="form-label">覆盖参数（JSON 对象，key 对应 SQL 中 ${name}；留空 { } 使用默认参数）</label>
-                <textarea id="runParamsInput" class="form-control form-control-sm mono" rows="4" placeholder='{"date":"2026-10-02"}'></textarea>
-                <div class="form-text mt-2">本次执行记录将以 MANUAL 触发类型保存。</div>
+                <label class="form-label" data-i18n="hc.runModal.params">Override Params</label>
+                <textarea id="runParamsInput" class="form-control form-control-sm mono" rows="4" placeholder="{}"></textarea>
+                <div class="form-text mt-2" data-i18n="hc.runModal.note"></div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">取消</button>
-                <button class="btn btn-success btn-sm" onclick="doRun()">执行</button>
+                <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-success btn-sm" onclick="doRun()" data-i18n="hc.runModal.exec">Run</button>
             </div>
         </div>
     </div>
@@ -149,7 +158,7 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">执行结果 <span id="runModalBadge"></span></h5>
+                <h5 class="modal-title"><span data-i18n="hc.result.title">Run Result</span> <span id="runModalBadge"></span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" id="runResultBody"></div>
@@ -162,21 +171,29 @@
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">执行记录 <span id="runsModalTitle" class="text-muted fs-6"></span></h5>
+                <h5 class="modal-title"><span data-i18n="hc.runs.title">Run History</span> <span id="runsModalTitle" class="text-muted fs-6"></span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <table class="table table-sm table-hover align-middle">
                     <thead class="table-light">
-                    <tr><th>时间</th><th>触发</th><th>状态</th><th>行数</th><th>耗时</th><th>断言</th><th>错误</th></tr>
+                    <tr>
+                        <th data-i18n="common.time">Time</th>
+                        <th data-i18n="hc.runs.trigger">Trigger</th>
+                        <th data-i18n="rel.col.status">Status</th>
+                        <th data-i18n="hc.runs.rows">Rows</th>
+                        <th data-i18n="common.duration">Duration</th>
+                        <th data-i18n="hc.runs.assert">Assert</th>
+                        <th data-i18n="common.error">Error</th>
+                    </tr>
                     </thead>
                     <tbody id="runsTable"></tbody>
                 </table>
                 <div class="d-flex justify-content-between align-items-center">
                     <span class="text-muted small" id="runsPagerInfo"></span>
                     <div>
-                        <button class="btn btn-outline-secondary btn-sm" onclick="runsPage(-1)">上一页</button>
-                        <button class="btn btn-outline-secondary btn-sm" onclick="runsPage(1)">下一页</button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="runsPage(-1)" data-i18n="hc.runs.prev">Prev</button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="runsPage(1)" data-i18n="hc.runs.next">Next</button>
                     </div>
                 </div>
             </div>
@@ -189,13 +206,21 @@
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">修改记录 <span id="historyModalTitle" class="text-muted fs-6"></span></h5>
+                <h5 class="modal-title"><span data-i18n="hc.history.title">Change History</span> <span id="historyModalTitle" class="text-muted fs-6"></span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <table class="table table-sm table-hover align-middle">
                     <thead class="table-light">
-                    <tr><th>版本</th><th>类型</th><th>SQL</th><th>断言</th><th>Cron</th><th>修改人</th><th>时间</th></tr>
+                    <tr>
+                        <th data-i18n="hc.col.version">Version</th>
+                        <th data-i18n="hc.history.type">Type</th>
+                        <th>SQL</th>
+                        <th data-i18n="hc.runs.assert">Assert</th>
+                        <th>Cron</th>
+                        <th data-i18n="hc.history.by">By</th>
+                        <th data-i18n="common.time">Time</th>
+                    </tr>
                     </thead>
                     <tbody id="historyTable"></tbody>
                 </table>
@@ -207,6 +232,7 @@
 <script src="/lib/jquery/jquery-3.7.1.min.js"></script>
 <script src="/lib/bootstrap-5.2.3/js/bootstrap.bundle.min.js"></script>
 <script src="/js/common.js"></script>
+<script src="/js/i18n.js"></script>
 <script src="/js/healthchecks.js"></script>
 </body>
 </html>

@@ -119,10 +119,10 @@ public class HealthCheckService {
         SqlDefinition def = requireExists(defId);
         DbConnection conn = connectionMapper.selectByKey(def.getConnKey());
         if (conn == null) {
-            throw new BizException(ErrorCode.DS_NOT_FOUND, "连接不存在: " + def.getConnKey());
+            throw BizException.i18n(ErrorCode.DS_NOT_FOUND, "error.ds.notFound", def.getConnKey());
         }
         if (conn.getEnabled() == null || conn.getEnabled() != 1) {
-            throw new BizException(ErrorCode.DS_DISABLED, "连接已禁用: " + def.getConnKey());
+            throw BizException.i18n(ErrorCode.DS_DISABLED, "error.ds.disabled", def.getConnKey());
         }
 
         long t0 = System.currentTimeMillis();
@@ -192,7 +192,7 @@ public class HealthCheckService {
 
     private void validate(SqlDefinition def, boolean isCreate) {
         if (connectionMapper.selectByKey(def.getConnKey()) == null) {
-            throw new BizException(ErrorCode.DS_NOT_FOUND, "连接不存在: " + def.getConnKey());
+            throw BizException.i18n(ErrorCode.DS_NOT_FOUND, "error.ds.notFound", def.getConnKey());
         }
         // L1 拦截：先解析 ${name} 占位符再校验（原始 SQL 含占位符无法通过语法解析），脏数据不入库
         prepare(def, null);
@@ -209,8 +209,7 @@ public class HealthCheckService {
             try {
                 new CronTrigger(def.getCronExpr());
             } catch (IllegalArgumentException e) {
-                throw new BizException(ErrorCode.HC_CRON_INVALID,
-                        "Cron 表达式非法（Spring 6 段格式）: " + e.getMessage());
+                throw BizException.i18n(ErrorCode.HC_CRON_INVALID, "error.hc.cronInvalid", e.getMessage());
             }
         }
         if (def.getTimeoutSec() == null) {
@@ -246,8 +245,8 @@ public class HealthCheckService {
         try {
             JsonNode node = JsonUtils.mapper().readTree(json);
             if (!node.isObject()) {
-                throw new BizException(ErrorCode.HC_CONFIG_INVALID,
-                        "默认参数需为 JSON 对象，如 {\"date\":\"2026-10-01\",\"status\":1}");
+                throw BizException.i18n(ErrorCode.HC_CONFIG_INVALID,
+                        "error.hc.paramsMustBeObject", "{\"date\":\"2026-10-01\",\"status\":1}");
             }
             Map<String, Object> map = JsonUtils.mapper().convertValue(node,
                     new TypeReference<Map<String, Object>>() {
@@ -256,7 +255,7 @@ public class HealthCheckService {
         } catch (BizException e) {
             throw e;
         } catch (Exception e) {
-            throw new BizException(ErrorCode.HC_CONFIG_INVALID, "默认参数解析失败: " + e.getMessage());
+            throw BizException.i18n(ErrorCode.HC_CONFIG_INVALID, "error.hc.paramsParseFailed", e.getMessage());
         }
     }
 
@@ -282,7 +281,7 @@ public class HealthCheckService {
     private SqlDefinition requireExists(Long id) {
         SqlDefinition def = defMapper.selectById(id);
         if (def == null) {
-            throw new BizException(ErrorCode.HC_DEF_NOT_FOUND, "健康检查定义不存在: " + id);
+            throw BizException.i18n(ErrorCode.HC_DEF_NOT_FOUND, "error.hc.defNotFound", id);
         }
         return def;
     }

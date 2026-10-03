@@ -8,4 +8,8 @@ public class SqlExecException extends BizException {
     public SqlExecException(ErrorCode errorCode, String message, Throwable cause) {
         super(errorCode, message, cause);
     }
+
+    public SqlExecException(ErrorCode errorCode, String messageKey, Object[] args, Throwable cause) {
+        super(errorCode, messageKey, args, cause);
+    }
 }

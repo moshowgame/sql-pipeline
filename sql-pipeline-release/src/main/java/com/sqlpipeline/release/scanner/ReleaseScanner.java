@@ -44,12 +44,12 @@ public class ReleaseScanner {
                     .filter(st -> !st.sqlFiles().isEmpty())
                     .toList();
             if (steps.size() > properties.getMaxSteps()) {
-                throw new BizException(ErrorCode.RL_SCAN_FAILED,
-                        "步骤目录数 " + steps.size() + " 超过上限 " + properties.getMaxSteps());
+                throw BizException.i18n(ErrorCode.RL_SCAN_FAILED,
+                        "error.rl.maxStepsExceeded", steps.size(), properties.getMaxSteps());
             }
             return steps;
         } catch (IOException e) {
-            throw new BizException(ErrorCode.RL_SCAN_FAILED, "目录扫描失败: " + planDir, e);
+            throw BizException.i18n(ErrorCode.RL_SCAN_FAILED, "error.rl.scanFailed", String.valueOf(planDir), e);
         }
     }
 
@@ -63,7 +63,7 @@ public class ReleaseScanner {
                     .toList();
             return new ScannedStep(Integer.parseInt(dir.getFileName().toString()), dir, sqlFiles);
         } catch (IOException e) {
-            throw new BizException(ErrorCode.RL_SCAN_FAILED, "目录扫描失败: " + dir, e);
+            throw BizException.i18n(ErrorCode.RL_SCAN_FAILED, "error.rl.scanFailed", String.valueOf(dir), e);
         }
     }
 }

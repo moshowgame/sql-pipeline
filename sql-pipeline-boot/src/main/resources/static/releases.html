@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>发布编排 - sql-pipeline</title>
+    <title>Releases - sql-pipeline</title>
     <link rel="stylesheet" href="/lib/bootstrap-5.2.3/css/bootstrap.min.css">
     <link rel="stylesheet" href="/css/app.css">
 </head>
@@ -12,14 +12,14 @@
     <div class="container-fluid">
         <a class="navbar-brand" href="/">⇄ sql-pipeline</a>
         <ul class="navbar-nav me-auto">
-            <li class="nav-item"><a class="nav-link" href="/">总览</a></li>
-            <li class="nav-item"><a class="nav-link" href="/connections.html">连接管理</a></li>
-            <li class="nav-item"><a class="nav-link" href="/health-checks.html">健康检查</a></li>
-            <li class="nav-item"><a class="nav-link active" href="/releases.html">发布编排</a></li>
-            <li class="nav-item"><a class="nav-link" href="/notify.html">告警通知</a></li>
+            <li class="nav-item"><a class="nav-link" href="/" data-i18n="nav.dashboard">Dashboard</a></li>
+            <li class="nav-item"><a class="nav-link" href="/connections.html" data-i18n="nav.connections">Connections</a></li>
+            <li class="nav-item"><a class="nav-link" href="/health-checks.html" data-i18n="nav.healthChecks">Health Checks</a></li>
+            <li class="nav-item"><a class="nav-link active" href="/releases.html" data-i18n="nav.releases">Releases</a></li>
+            <li class="nav-item"><a class="nav-link" href="/notify.html" data-i18n="nav.notify">Alerts</a></li>
         </ul>
         <div class="d-flex align-items-center text-white-50">
-            <span class="me-2 small">操作者</span>
+            <span class="me-2 small" data-i18n="nav.operator">Operator</span>
             <input id="operatorInput" class="form-control form-control-sm" style="width:130px" placeholder="X-Operator">
         </div>
     </div>
@@ -27,8 +27,8 @@
 
 <div class="container">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h5 class="mb-0">发布编排（release_YYYYMMDD/1..9 目录顺序执行）</h5>
-        <button class="btn btn-primary btn-sm" onclick="openCreate()">+ 创建计划</button>
+        <h5 class="mb-0" data-i18n="rel.title">Release Orchestration</h5>
+        <button class="btn btn-primary btn-sm" onclick="openCreate()" data-i18n="rel.create">+ Create Plan</button>
     </div>
 
     <div class="card page-card">
@@ -36,11 +36,18 @@
             <table class="table table-hover mb-0 align-middle">
                 <thead class="table-light">
                 <tr>
-                    <th>ID</th><th>计划名</th><th>状态</th><th>CR 单号</th><th>操作人</th>
-                    <th>开始时间</th><th>完成时间</th><th>重跑次数</th><th style="min-width:120px">操作</th>
+                    <th>ID</th>
+                    <th data-i18n="rel.col.planName">Plan Name</th>
+                    <th data-i18n="rel.col.status">Status</th>
+                    <th data-i18n="rel.col.cr">CR No.</th>
+                    <th data-i18n="rel.col.operator">Operator</th>
+                    <th data-i18n="rel.col.startedAt">Start Time</th>
+                    <th data-i18n="rel.col.finishedAt">Finish Time</th>
+                    <th data-i18n="rel.col.reruns">Reruns</th>
+                    <th style="min-width:120px" data-i18n="common.actions">Actions</th>
                 </tr>
                 </thead>
-                <tbody id="planTable"><tr><td colspan="9" class="text-center text-muted py-4">加载中…</td></tr></tbody>
+                <tbody id="planTable"><tr><td colspan="9" class="text-center text-muted py-4" data-i18n="common.loading">Loading…</td></tr></tbody>
             </table>
         </div>
     </div>
@@ -49,17 +56,17 @@
     <div class="card page-card d-none" id="detailCard">
         <div class="card-header bg-white d-flex justify-content-between align-items-center">
             <div>
-                <span class="fw-bold" id="detailTitle">计划详情</span>
+                <span class="fw-bold" id="detailTitle"></span>
                 <span class="ms-2" id="detailStatus"></span>
                 <span class="ms-2" id="sseBadge"></span>
             </div>
             <div class="btn-group btn-group-sm">
-                <button class="btn btn-success" id="btnStart" onclick="openStart()">启动</button>
-                <button class="btn btn-warning text-dark" id="btnContinue" onclick="doContinue()">继续(Continue)</button>
-                <button class="btn btn-outline-primary" id="btnRerun" onclick="doRerun()">全流程重跑</button>
-                <button class="btn btn-outline-info" onclick="openLogs()">SQL 日志</button>
-                <button class="btn btn-outline-info" onclick="openSummaries()">运行摘要</button>
-                <button class="btn btn-outline-secondary" onclick="loadDetail(currentPlanId, true)">刷新</button>
+                <button class="btn btn-success" id="btnStart" onclick="openStart()" data-i18n="rel.btn.start">Start</button>
+                <button class="btn btn-warning text-dark" id="btnContinue" onclick="doContinue()" data-i18n="rel.btn.continue">Continue</button>
+                <button class="btn btn-outline-primary" id="btnRerun" onclick="doRerun()" data-i18n="rel.btn.rerun">Rerun All</button>
+                <button class="btn btn-outline-info" onclick="openLogs()" data-i18n="rel.btn.logs">SQL Logs</button>
+                <button class="btn btn-outline-info" onclick="openSummaries()" data-i18n="rel.btn.summaries">Run Summaries</button>
+                <button class="btn btn-outline-secondary" onclick="loadDetail(currentPlanId, true)" data-i18n="rel.btn.refresh">Refresh</button>
             </div>
         </div>
         <div class="card-body">
@@ -67,8 +74,16 @@
             <table class="table table-sm table-hover align-middle mb-0">
                 <thead class="table-light">
                 <tr>
-                    <th>步骤</th><th>目录</th><th>连接</th><th>afterMode</th><th>执行者</th>
-                    <th>状态</th><th>重试</th><th>耗时</th><th>错误</th><th style="min-width:110px">操作</th>
+                    <th data-i18n="rel.steps.col.step">Step</th>
+                    <th data-i18n="rel.steps.col.dir">Directory</th>
+                    <th data-i18n="rel.steps.col.conn">Connection</th>
+                    <th>afterMode</th>
+                    <th data-i18n="rel.steps.col.executor">Executor</th>
+                    <th data-i18n="rel.col.status">Status</th>
+                    <th data-i18n="rel.steps.col.retries">Retries</th>
+                    <th data-i18n="common.duration">Duration</th>
+                    <th data-i18n="common.error">Error</th>
+                    <th style="min-width:110px" data-i18n="common.actions">Actions</th>
                 </tr>
                 </thead>
                 <tbody id="stepTable"></tbody>
@@ -82,40 +97,46 @@
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">创建发布计划</h5>
+                <h5 class="modal-title" data-i18n="rel.createModal.title">Create Release Plan</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <div class="row g-3">
                     <div class="col-md-4">
-                        <label class="form-label">计划名（= base-path 下的目录名）<span class="text-danger">*</span></label>
-                        <input id="cPlanName" class="form-control form-control-sm mono" placeholder="release_20261003">
+                        <label class="form-label" data-i18n="rel.createModal.planName">Plan name</label> <span class="text-danger">*</span>
+                        <input id="cPlanName" class="form-control form-control-sm mono" data-i18n-placeholder="rel.createModal.planNamePlaceholder">
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label">默认连接（未单独配置的步骤使用）</label>
+                        <label class="form-label" data-i18n="rel.createModal.defaultConn">Default Connection</label>
                         <select id="cDefaultConn" class="form-select form-select-sm"></select>
                     </div>
                     <div class="col-md-4 d-flex align-items-end">
-                        <button class="btn btn-outline-info btn-sm" onclick="doScan()">扫描目录预览</button>
+                        <button class="btn btn-outline-info btn-sm" onclick="doScan()" data-i18n="rel.createModal.scan">Scan Directory Preview</button>
                     </div>
                 </div>
 
                 <hr>
                 <div class="d-flex justify-content-between align-items-center mb-2">
-                    <span class="fw-bold">步骤编排配置（可选；不配置默认 CONTINUE + 默认连接）</span>
-                    <button class="btn btn-outline-primary btn-sm" onclick="addStepRow()">+ 添加步骤</button>
+                    <span class="fw-bold" data-i18n="rel.createModal.stepsTitle">Step Configurations</span>
+                    <button class="btn btn-outline-primary btn-sm" onclick="addStepRow()" data-i18n="rel.createModal.addStep">+ Add Step</button>
                 </div>
                 <table class="table table-sm align-middle">
                     <thead class="table-light">
-                    <tr><th style="width:90px">步骤号</th><th style="width:200px">连接</th><th style="width:140px">afterMode</th><th>执行者（可空）</th><th style="width:50px"></th></tr>
+                    <tr>
+                        <th style="width:90px" data-i18n="rel.createModal.stepNo">Step No.</th>
+                        <th style="width:200px" data-i18n="rel.createModal.conn">Connection</th>
+                        <th style="width:140px">afterMode</th>
+                        <th data-i18n="rel.steps.col.executor">Executor</th>
+                        <th style="width:50px"></th>
+                    </tr>
                     </thead>
                     <tbody id="stepConfigRows"></tbody>
                 </table>
                 <div id="scanPreview" class="mt-2"></div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">取消</button>
-                <button class="btn btn-primary btn-sm" onclick="savePlan()">创建计划（DRAFT）</button>
+                <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-primary btn-sm" onclick="savePlan()" data-i18n="rel.createModal.title">Create Plan</button>
             </div>
         </div>
     </div>
@@ -126,23 +147,23 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">启动发布 <span id="startModalPlan" class="text-muted fs-6"></span></h5>
+                <h5 class="modal-title"><span data-i18n="rel.startModal.title">Start Release</span> <span id="startModalPlan" class="text-muted fs-6"></span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <div class="mb-3">
-                    <label class="form-label">CR 单号 <span class="text-danger">*</span></label>
-                    <input id="sCrNumber" class="form-control form-control-sm mono" placeholder="CR-20261003-001" maxlength="64">
+                    <label class="form-label"><span data-i18n="rel.startModal.cr">CR Number</span> <span class="text-danger">*</span></label>
+                    <input id="sCrNumber" class="form-control form-control-sm mono" data-i18n-placeholder="rel.startModal.crPlaceholder" maxlength="64">
                 </div>
                 <div class="mb-1">
-                    <label class="form-label">备注 <span class="text-danger">*</span></label>
-                    <textarea id="sRemark" class="form-control form-control-sm" rows="3" maxlength="512" placeholder="本次发布说明…"></textarea>
+                    <label class="form-label"><span data-i18n="rel.startModal.remark">Remark</span> <span class="text-danger">*</span></label>
+                    <textarea id="sRemark" class="form-control form-control-sm" rows="3" maxlength="512" data-i18n-placeholder="rel.startModal.remarkPlaceholder"></textarea>
                 </div>
-                <div class="text-muted small">启动者： <span class="mono" id="startOperator"></span>（右上角可切换）。CONTINUE 步骤将连跑，WAIT 步骤停下等人工确认。</div>
+                <div class="text-muted small"><span data-i18n="rel.startModal.starter">Starter: </span><span class="mono" id="startOperator"></span> <span data-i18n="rel.startModal.note"></span></div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">取消</button>
-                <button class="btn btn-success btn-sm" onclick="doStart()">启动</button>
+                <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-success btn-sm" onclick="doStart()" data-i18n="rel.btn.start">Start</button>
             </div>
         </div>
     </div>
@@ -153,10 +174,10 @@
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">SQL 明细日志</h5>
+                <h5 class="modal-title" data-i18n="rel.logsModal.title">SQL Logs</h5>
                 <div class="ms-3">
                     <select id="logsStepFilter" class="form-select form-select-sm d-inline-block" style="width:160px" onchange="loadLogs()">
-                        <option value="">全部步骤</option>
+                        <option value="" data-i18n="rel.logsModal.allSteps">All steps</option>
                     </select>
                 </div>
                 <button type="button" class="btn-close ms-auto" data-bs-dismiss="modal"></button>
@@ -164,7 +185,15 @@
             <div class="modal-body" style="max-height:60vh;overflow:auto">
                 <table class="table table-sm table-hover align-middle">
                     <thead class="table-light">
-                    <tr><th>#</th><th>步骤</th><th>文件</th><th>SQL</th><th>状态</th><th>耗时</th><th>错误</th></tr>
+                    <tr>
+                        <th>#</th>
+                        <th data-i18n="rel.logs.col.step">Step</th>
+                        <th data-i18n="rel.logs.col.file">File</th>
+                        <th>SQL</th>
+                        <th data-i18n="rel.logs.col.status">Status</th>
+                        <th data-i18n="common.duration">Duration</th>
+                        <th data-i18n="common.error">Error</th>
+                    </tr>
                     </thead>
                     <tbody id="logsTable"></tbody>
                 </table>
@@ -178,13 +207,20 @@
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">运行摘要（UAT 计时）</h5>
+                <h5 class="modal-title" data-i18n="rel.summaryModal.title">Run Summaries</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <table class="table table-sm table-hover align-middle">
                     <thead class="table-light">
-                    <tr><th>轮次</th><th>总耗时</th><th>开始</th><th>结束</th><th>操作人</th><th>各步耗时</th></tr>
+                    <tr>
+                        <th data-i18n="rel.summary.col.round">Round</th>
+                        <th data-i18n="rel.summary.col.total">Total Duration</th>
+                        <th data-i18n="rel.summary.col.started">Start</th>
+                        <th data-i18n="rel.summary.col.finished">Finish</th>
+                        <th data-i18n="rel.summary.col.operator">Operator</th>
+                        <th data-i18n="rel.summary.col.steps">Step Durations</th>
+                    </tr>
                     </thead>
                     <tbody id="summaryTable"></tbody>
                 </table>
@@ -196,6 +232,7 @@
 <script src="/lib/jquery/jquery-3.7.1.min.js"></script>
 <script src="/lib/bootstrap-5.2.3/js/bootstrap.bundle.min.js"></script>
 <script src="/js/common.js"></script>
+<script src="/js/i18n.js"></script>
 <script src="/js/releases.js"></script>
 </body>
 </html>

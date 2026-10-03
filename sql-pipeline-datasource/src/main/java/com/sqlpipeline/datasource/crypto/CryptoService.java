@@ -55,7 +55,7 @@ public class CryptoService {
             System.arraycopy(cipherText, 0, out, iv.length, cipherText.length);
             return Base64.getEncoder().encodeToString(out);
         } catch (Exception e) {
-            throw new BizException(ErrorCode.SYS_INTERNAL, "密码加密失败", e);
+            throw BizException.i18n(ErrorCode.SYS_INTERNAL, "error.crypto.encryptFailed", e);
         }
     }
 
@@ -67,7 +67,7 @@ public class CryptoService {
             byte[] plain = cipher.doFinal(all, IV_LENGTH, all.length - IV_LENGTH);
             return new String(plain, StandardCharsets.UTF_8);
         } catch (Exception e) {
-            throw new BizException(ErrorCode.SYS_INTERNAL, "密码解密失败（密钥是否与加密时一致？）", e);
+            throw BizException.i18n(ErrorCode.SYS_INTERNAL, "error.crypto.decryptFailed", e);
         }
     }
 }

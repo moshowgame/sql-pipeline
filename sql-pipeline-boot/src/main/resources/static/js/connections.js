@@ -10,13 +10,13 @@ function loadConnections() {
         connections = list || [];
         render();
     }).fail(function () {
-        $('#connTable').html('<tr><td colspan="9" class="text-center text-muted py-4">加载失败</td></tr>');
+        $('#connTable').html('<tr><td colspan="10" class="text-center text-muted py-4">' + App.escapeHtml(I18N.t('common.loadFailed')) + '</td></tr>');
     });
 }
 
 function render() {
     if (!connections.length) {
-        $('#connTable').html('<tr><td colspan="10" class="text-center text-muted py-4">暂无连接，点击右上角「新建连接」</td></tr>');
+        $('#connTable').html('<tr><td colspan="10" class="text-center text-muted py-4">' + App.escapeHtml(I18N.t('conn.empty')) + '</td></tr>');
         return;
     }
     const rows = connections.map(function (c) {
@@ -30,21 +30,21 @@ function render() {
             '<td class="mono">' + App.escapeHtml(c.defaultSchema || '-') + '</td>' +
             '<td class="mono">' + c.poolSize + ' / ' + c.connTimeoutMs + 'ms</td>' +
             '<td class="mono">' + c.maxRows + '</td>' +
-            '<td>' + (enabled ? App.badge('启用', 'success') : App.badge('停用', 'secondary')) + '</td>' +
+            '<td>' + (enabled ? App.badge(I18N.t('common.enabled'), 'success') : App.badge(I18N.t('common.disabled'), 'secondary')) + '</td>' +
             '<td><div class="btn-group btn-group-sm" role="group">' +
-            '<button class="btn btn-outline-info" onclick="testConn(' + c.id + ')">测试</button>' +
-            '<button class="btn btn-outline-secondary" onclick="reloadConn(' + c.id + ')">重载</button>' +
-            '<button class="btn btn-outline-primary" onclick="openEdit(' + c.id + ')">编辑</button>' +
+            '<button class="btn btn-outline-info" onclick="testConn(' + c.id + ')">' + I18N.t('common.test') + '</button>' +
+            '<button class="btn btn-outline-secondary" onclick="reloadConn(' + c.id + ')">' + I18N.t('conn.reload') + '</button>' +
+            '<button class="btn btn-outline-primary" onclick="openEdit(' + c.id + ')">' + I18N.t('common.edit') + '</button>' +
             (enabled
-                ? '<button class="btn btn-outline-warning" onclick="toggleConn(' + c.id + ', 0)">停用</button>'
-                : '<button class="btn btn-outline-success" onclick="toggleConn(' + c.id + ', 1)">启用</button>') +
+                ? '<button class="btn btn-outline-warning" onclick="toggleConn(' + c.id + ', 0)">' + I18N.t('common.disable') + '</button>'
+                : '<button class="btn btn-outline-success" onclick="toggleConn(' + c.id + ', 1)">' + I18N.t('common.enable') + '</button>') +
             '</div></td></tr>';
     });
     $('#connTable').html(rows.join(''));
 }
 
 function openCreate() {
-    $('#connModalTitle').text('新建连接');
+    $('#connModalTitle').text(I18N.t('conn.modal.create'));
     $('#connForm')[0].reset();
     $('#connId').val('');
     $('#fConnKey').prop('disabled', false);
@@ -58,15 +58,15 @@ function openCreate() {
 function openEdit(id) {
     const c = connections.find(x => x.id === id);
     if (!c) return;
-    $('#connModalTitle').text('编辑连接 #' + id);
+    $('#connModalTitle').text(I18N.t('conn.modal.edit', { id: id }));
     $('#connId').val(c.id);
     $('#fConnKey').val(c.connKey).prop('disabled', true);
     $('#fDisplayName').val(c.displayName);
     $('#fJdbcUrl').val(c.jdbcUrl);
     $('#fUsername').val(c.username);
+    $('#fDefaultSchema').val(c.defaultSchema || '');
     $('#fPassword').val('');
     $('#fDriverClass').val(c.driverClass);
-    $('#fDefaultSchema').val(c.defaultSchema || '');
     $('#fPoolSize').val(c.poolSize);
     $('#fConnTimeout').val(c.connTimeoutMs);
     $('#fMaxRows').val(c.maxRows);
@@ -93,18 +93,18 @@ function saveConn() {
     };
     if (id) {
         App.api('PUT', '/api/connections/' + id, base).then(function () {
-            App.toast('连接已更新，连接池已热更新');
+            App.toast(I18N.t('conn.toast.updated'));
             bootstrap.Modal.getInstance($('#connModal')[0]).hide();
             loadConnections();
         });
     } else {
         base.connKey = $('#fConnKey').val().trim();
         if (!base.connKey || !base.displayName || !base.jdbcUrl || !base.username || !base.password) {
-            App.toast('请填写完整的必填项（connKey/名称/URL/用户名/密码）', 'danger');
+            App.toast(I18N.t('conn.toast.required'), 'danger');
             return;
         }
         App.api('POST', '/api/connections', base).then(function () {
-            App.toast('连接已创建并注册连接池');
+            App.toast(I18N.t('conn.toast.created'));
             bootstrap.Modal.getInstance($('#connModal')[0]).hide();
             loadConnections();
         });
@@ -113,20 +113,21 @@ function saveConn() {
 
 function testConn(id) {
     App.api('POST', '/api/connections/' + id + '/test').then(function (r) {
-        App.toast(r.ok ? '连接成功，耗时 ' + r.latencyMs + ' ms' : '连接失败：' + r.message, r.ok ? 'success' : 'danger');
+        App.toast(r.ok ? I18N.t('conn.toast.testOk', { ms: r.latencyMs })
+                : I18N.t('conn.toast.testFail', { msg: r.message }),
+            r.ok ? 'success' : 'danger');
     });
 }
 
 function reloadConn(id) {
     App.api('POST', '/api/connections/' + id + '/reload').then(function () {
-        App.toast('连接池已重载');
+        App.toast(I18N.t('conn.toast.reloaded'));
     });
 }
 
 function toggleConn(id, enabled) {
-    const c = connections.find(x => x.id === id);
     App.api('PUT', '/api/connections/' + id, { enabled: enabled }).then(function () {
-        App.toast('连接已' + (enabled === 1 ? '启用' : '停用（连接池已移除）'));
+        App.toast(enabled === 1 ? I18N.t('conn.toast.enabled') : I18N.t('conn.toast.disabled'));
         loadConnections();
     });
 }

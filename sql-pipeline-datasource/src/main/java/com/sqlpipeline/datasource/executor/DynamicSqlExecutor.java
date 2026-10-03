@@ -51,9 +51,11 @@ public class DynamicSqlExecutor {
                 }
             }
         } catch (SQLTimeoutException e) {
-            throw new SqlExecException(ErrorCode.HC_SQL_TIMEOUT, "SQL 执行超时(" + timeoutSec + "s)", e);
+            throw new SqlExecException(ErrorCode.HC_SQL_TIMEOUT,
+                    "error.hc.sqlTimeout", new Object[]{timeoutSec}, e);
         } catch (SQLException e) {
-            throw new SqlExecException(ErrorCode.HC_SQL_ERROR, "SQL 执行失败: " + e.getMessage(), e);
+            throw new SqlExecException(ErrorCode.HC_SQL_ERROR,
+                    "error.hc.sqlError", new Object[]{e.getMessage()}, e);
         }
     }
 

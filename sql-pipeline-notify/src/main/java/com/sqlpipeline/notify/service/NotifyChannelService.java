@@ -78,28 +78,28 @@ public class NotifyChannelService {
 
     private void validate(NotifyChannel channel, String plainSecret, boolean isCreate) {
         if (!hasText(channel.getName()) || !hasText(channel.getUrl())) {
-            throw new BizException(ErrorCode.SYS_PARAM_INVALID, "通道名称与 URL 必填");
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.notify.nameUrlRequired");
         }
         if (!channel.getUrl().startsWith("http://") && !channel.getUrl().startsWith("https://")) {
-            throw new BizException(ErrorCode.SYS_PARAM_INVALID, "URL 必须以 http(s):// 开头");
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.notify.urlInvalid");
         }
         if (!NotifyChannel.TYPE_XMATTERS.equals(channel.getType())) {
-            throw new BizException(ErrorCode.SYS_PARAM_INVALID,
-                    "暂不支持的通道类型: " + channel.getType() + "（当前支持 XMATTERS）");
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID,
+                    "error.notify.typeUnsupported", channel.getType());
         }
         String authType = hasText(channel.getAuthType()) ? channel.getAuthType() : NotifyChannel.AUTH_NONE;
         if (!List.of(NotifyChannel.AUTH_NONE, NotifyChannel.AUTH_BASIC, NotifyChannel.AUTH_API_KEY).contains(authType)) {
-            throw new BizException(ErrorCode.SYS_PARAM_INVALID, "认证方式仅支持 NONE/BASIC/API_KEY");
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.notify.authTypeInvalid");
         }
         if (NotifyChannel.AUTH_BASIC.equals(authType) && isCreate && (!hasText(channel.getUsername()) || !hasText(plainSecret))) {
-            throw new BizException(ErrorCode.SYS_PARAM_INVALID, "BASIC 认证需要用户名与密码");
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.notify.basicRequired");
         }
         if (NotifyChannel.AUTH_API_KEY.equals(authType) && isCreate && !hasText(plainSecret)) {
-            throw new BizException(ErrorCode.SYS_PARAM_INVALID, "API_KEY 认证需要填写 API Key");
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.notify.apiKeyRequired");
         }
         List<String> events = parseEvents(channel.getEvents());
         if (events.isEmpty()) {
-            throw new BizException(ErrorCode.SYS_PARAM_INVALID, "至少订阅一种事件");
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.notify.eventsRequired");
         }
     }
 
@@ -121,7 +121,7 @@ public class NotifyChannelService {
     private NotifyChannel requireExists(Long id) {
         NotifyChannel channel = mapper.selectById(id);
         if (channel == null) {
-            throw new BizException(ErrorCode.SYS_PARAM_INVALID, "告警通道不存在: " + id);
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.notify.channelNotFound", id);
         }
         return channel;
     }

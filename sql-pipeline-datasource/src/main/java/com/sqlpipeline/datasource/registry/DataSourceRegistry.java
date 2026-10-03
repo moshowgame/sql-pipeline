@@ -72,7 +72,7 @@ public class DataSourceRegistry implements DisposableBean {
     public DataSource get(String key) {
         HikariDataSource ds = pools.get(key);
         if (ds == null) {
-            throw new BizException(ErrorCode.DS_NOT_FOUND, "数据源不存在或未启用: " + key);
+            throw BizException.i18n(ErrorCode.DS_NOT_FOUND, "error.ds.notEnabled", key);
         }
         return ds;
     }

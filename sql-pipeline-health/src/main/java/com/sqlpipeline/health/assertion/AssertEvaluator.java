@@ -41,17 +41,17 @@ public class AssertEvaluator {
     /** 保存前校验断言三要素。 */
     public void validate(String type, String op, BigDecimal value) {
         if (type == null || !TYPES.contains(type)) {
-            throw new BizException(ErrorCode.HC_CONFIG_INVALID, "断言类型仅支持 VALUE（返回值）/ ROWS（返回行数）: " + type);
+            throw BizException.i18n(ErrorCode.HC_CONFIG_INVALID, "error.hc.assertTypeInvalid", type);
         }
         checkOp(op);
         if (value == null) {
-            throw new BizException(ErrorCode.HC_CONFIG_INVALID, "断言缺少期望值");
+            throw BizException.i18n(ErrorCode.HC_CONFIG_INVALID, "error.hc.assertValueRequired");
         }
     }
 
     private void checkOp(String op) {
         if (op == null || !OPS.contains(op)) {
-            throw new BizException(ErrorCode.HC_CONFIG_INVALID, "不支持的操作符: " + op + "，支持 == != > >= < <=");
+            throw BizException.i18n(ErrorCode.HC_CONFIG_INVALID, "error.hc.assertOpInvalid", op);
         }
     }
 
@@ -64,7 +64,7 @@ public class AssertEvaluator {
             case ">=" -> c >= 0;
             case "<" -> c < 0;
             case "<=" -> c <= 0;
-            default -> throw new BizException(ErrorCode.HC_CONFIG_INVALID, "不支持的操作符: " + op);
+            default -> throw BizException.i18n(ErrorCode.HC_CONFIG_INVALID, "error.hc.assertOpUnknown", op);
         };
     }
 

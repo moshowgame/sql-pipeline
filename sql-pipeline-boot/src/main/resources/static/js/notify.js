@@ -19,7 +19,7 @@ function loadAll() {
 
 function renderChannels() {
     if (!channels.length) {
-        $('#channelTable').html('<tr><td colspan="9" class="text-center text-muted py-4">暂无通道，点击右上角「新建通道」</td></tr>');
+        $('#channelTable').html('<tr><td colspan="9" class="text-center text-muted py-4">' + App.escapeHtml(I18N.t('ntf.empty')) + '</td></tr>');
         return;
     }
     const rows = channels.map(function (c) {
@@ -36,11 +36,11 @@ function renderChannels() {
             '</td>' +
             '<td class="small">' + App.escapeHtml(events) + '</td>' +
             '<td class="mono">' + (c.hcFailThreshold || 1) + '</td>' +
-            '<td>' + (enabled ? App.badge('启用', 'success') : App.badge('停用', 'secondary')) + '</td>' +
+            '<td>' + (enabled ? App.badge(I18N.t('common.enabled'), 'success') : App.badge(I18N.t('common.disabled'), 'secondary')) + '</td>' +
             '<td><div class="btn-group btn-group-sm" role="group">' +
-            '<button class="btn btn-success" onclick="testChannel(' + c.id + ')">测试</button>' +
-            '<button class="btn btn-outline-primary" onclick="openEdit(' + c.id + ')">编辑</button>' +
-            '<button class="btn btn-outline-danger" onclick="deleteChannel(' + c.id + ')">删除</button>' +
+            '<button class="btn btn-success" onclick="testChannel(' + c.id + ')">' + I18N.t('common.test') + '</button>' +
+            '<button class="btn btn-outline-primary" onclick="openEdit(' + c.id + ')">' + I18N.t('common.edit') + '</button>' +
+            '<button class="btn btn-outline-danger" onclick="deleteChannel(' + c.id + ')">' + I18N.t('common.delete') + '</button>' +
             '</div></td></tr>';
     });
     $('#channelTable').html(rows.join(''));
@@ -48,7 +48,7 @@ function renderChannels() {
 
 function renderLogs(logs) {
     if (!logs.length) {
-        $('#logTable').html('<tr><td colspan="6" class="text-center text-muted py-4">暂无推送日志</td></tr>');
+        $('#logTable').html('<tr><td colspan="6" class="text-center text-muted py-4">' + App.escapeHtml(I18N.t('ntf.logs.empty')) + '</td></tr>');
         return;
     }
     const rows = logs.map(function (l) {
@@ -67,15 +67,15 @@ function toggleAuthFields(authType) {
     $('#usernameWrap, #secretWrap, #headerWrap').hide();
     if (authType === 'BASIC') {
         $('#usernameWrap, #secretWrap').show();
-        $('#secretWrap label').text('密码（BASIC）');
+        $('#secretLabel').text(I18N.t('ntf.field.secretBasic'));
     } else if (authType === 'API_KEY') {
         $('#headerWrap, #secretWrap').show();
-        $('#secretWrap label').text('API Key');
+        $('#secretLabel').text(I18N.t('ntf.field.secretApiKey'));
     }
 }
 
 function openCreate() {
-    $('#channelModalTitle').text('新建告警通道');
+    $('#channelModalTitle').text(I18N.t('ntf.modal.create'));
     $('#channelForm')[0].reset();
     $('#channelId').val('');
     $('#nType').val('XMATTERS');
@@ -91,7 +91,7 @@ function openCreate() {
 function openEdit(id) {
     const c = channels.find(x => x.id === id);
     if (!c) return;
-    $('#channelModalTitle').text('编辑告警通道 #' + id);
+    $('#channelModalTitle').text(I18N.t('ntf.modal.edit', { id: id }));
     $('#channelId').val(c.id);
     $('#nName').val(c.name);
     $('#nType').val(c.type);
@@ -124,33 +124,33 @@ function saveChannel() {
         hcFailThreshold: parseInt($('#nThreshold').val(), 10) || 1,
         enabled: parseInt($('#nEnabled').val(), 10)
     };
-    if (!body.url || !body.name) { App.toast('名称与触发 URL 必填', 'danger'); return; }
-    if (!body.events.length) { App.toast('至少订阅一种事件', 'danger'); return; }
+    if (!body.url || !body.name) { App.toast(I18N.t('ntf.toast.required'), 'danger'); return; }
+    if (!body.events.length) { App.toast(I18N.t('ntf.toast.eventsRequired'), 'danger'); return; }
     const req = id ? App.api('PUT', '/api/notify/channels/' + id, body)
         : App.api('POST', '/api/notify/channels', body);
     req.then(function () {
-        App.toast('通道已保存');
+        App.toast(I18N.t('ntf.toast.saved'));
         bootstrap.Modal.getInstance($('#channelModal')[0]).hide();
         loadAll();
     });
 }
 
 function testChannel(id) {
-    App.toast('正在发送测试事件…', 'secondary');
+    App.toast(I18N.t('ntf.toast.sendingTest'), 'secondary');
     App.api('POST', '/api/notify/channels/' + id + '/test').then(function (log) {
         if (log.status === 'SUCCESS') {
-            App.toast('测试成功：' + (log.responseBody || ''));
+            App.toast(I18N.t('ntf.toast.testOk', { msg: log.responseBody || '' }));
         } else {
-            App.toast('测试失败：' + (log.errorMsg || '未知错误'), 'danger');
+            App.toast(I18N.t('ntf.toast.testFail', { msg: log.errorMsg || '' }), 'danger');
         }
         loadAll();
     });
 }
 
 function deleteChannel(id) {
-    if (!confirm('确认删除该告警通道？')) return;
+    if (!confirm(I18N.t('ntf.confirmDelete'))) return;
     App.api('DELETE', '/api/notify/channels/' + id).then(function () {
-        App.toast('通道已删除');
+        App.toast(I18N.t('ntf.toast.deleted'));
         loadAll();
     });
 }

@@ -9,6 +9,8 @@ import com.sqlpipeline.datasource.registry.DataSourceRegistry;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.sql.Connection;
@@ -25,16 +27,21 @@ public class ConnectionService {
     private final DbConnectionMapper mapper;
     private final CryptoService crypto;
     private final DataSourceRegistry registry;
+    private final MessageSource messageSource;
+
+    private String msg(String key, Object... args) {
+        return messageSource.getMessage(key, args, key, LocaleContextHolder.getLocale());
+    }
 
     public Long create(DbConnection entity, String plainPassword, String operator) {
         if (!hasText(entity.getConnKey())) {
-            throw new BizException(ErrorCode.SYS_PARAM_INVALID, "connKey 不能为空");
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.sys.connKeyRequired");
         }
         if (!hasText(plainPassword)) {
-            throw new BizException(ErrorCode.SYS_PARAM_INVALID, "密码不能为空");
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.sys.passwordRequired");
         }
         if (mapper.selectByKey(entity.getConnKey()) != null) {
-            throw new BizException(ErrorCode.SYS_PARAM_INVALID, "connKey 已存在: " + entity.getConnKey());
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.ds.connKeyExists", entity.getConnKey());
         }
         entity.setPasswordEnc(crypto.encrypt(plainPassword));
         if (entity.getEnabled() == null) {
@@ -116,11 +123,12 @@ public class ConnectionService {
         try (HikariDataSource ds = new HikariDataSource(cfg)) {
             try (Connection conn = ds.getConnection()) {
                 boolean valid = conn.isValid(3);
-                return new TestResult(valid, valid ? "连接成功" : "连接校验失败",
-                        System.currentTimeMillis() - t0);
+                return new TestResult(valid, valid ? msg("error.ds.testOk", System.currentTimeMillis() - t0)
+                        : msg("error.ds.testInvalid"), System.currentTimeMillis() - t0);
             }
         } catch (SQLException ex) {
-            return new TestResult(false, "连接失败: " + ex.getMessage(), System.currentTimeMillis() - t0);
+            return new TestResult(false, msg("error.ds.testFailed", ex.getMessage()),
+                    System.currentTimeMillis() - t0);
         }
     }
 
@@ -138,7 +146,7 @@ public class ConnectionService {
     private DbConnection requireExists(Long id) {
         DbConnection e = mapper.selectById(id);
         if (e == null) {
-            throw new BizException(ErrorCode.DS_NOT_FOUND, "连接不存在: " + id);
+            throw BizException.i18n(ErrorCode.DS_NOT_FOUND, "error.ds.notFound", id);
         }
         return e;
     }
