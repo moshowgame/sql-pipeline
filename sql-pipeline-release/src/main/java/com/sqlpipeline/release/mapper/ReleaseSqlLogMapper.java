@@ -11,5 +11,7 @@ public interface ReleaseSqlLogMapper {
 
     int insert(ReleaseSqlLog entity);
 
-    List<ReleaseSqlLog> selectByPlan(@Param("planId") Long planId, @Param("stepNo") Integer stepNo);
+    List<ReleaseSqlLog> selectByPlan(@Param("planId") Long planId,
+                                     @Param("stepNo") Integer stepNo,
+                                     @Param("runSeq") Integer runSeq);
 }

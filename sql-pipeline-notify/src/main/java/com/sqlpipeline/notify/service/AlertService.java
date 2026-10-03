@@ -11,6 +11,8 @@ import com.sqlpipeline.notify.mapper.NotifyLogMapper;
 import com.sqlpipeline.notify.sender.AlertSender;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 
@@ -39,6 +41,11 @@ public class AlertService {
     private final List<AlertSender> senders;
     private final ThreadPoolTaskExecutor alertExecutor;
     private final NotifyProperties properties;
+    private final MessageSource messageSource;
+
+    private String msg(String key, Object... args) {
+        return messageSource.getMessage(key, args, key, LocaleContextHolder.getLocale());
+    }
 
     /** 健康检查连续失败计数（内存态：重启清零，多实例各自计数）。 */
     private final ConcurrentHashMap<Long, Integer> hcFailStreak = new ConcurrentHashMap<>();
@@ -72,7 +79,7 @@ public class AlertService {
                 props.put("assertMsg", assertMsg);
             }
             dispatch(AlertEvents.HC_FAIL, "WARN",
-                    "健康检查失败(连续第 " + streak + " 次): " + defName,
+                    msg("notify.alert.hcFail", streak, defName),
                     buildFailMessage(status, errorMsg, assertMsg), props,
                     // 阈值语义：连续失败次数恰好达到通道阈值时告警一次；阈值 1 = 每次失败即告警
                     ch -> ch.getHcFailThreshold() == null || ch.getHcFailThreshold() <= 1
@@ -97,8 +104,8 @@ public class AlertService {
                 props.put("errorMsg", errorMsg);
             }
             dispatch(AlertEvents.RELEASE_STEP_FAIL, "CRITICAL",
-                    "发布步骤失败: " + planName + " 第 " + stepNo + " 步",
-                    hasText(errorMsg) ? errorMsg : "步骤执行失败", props, ch -> true);
+                    msg("notify.alert.stepFail", planName, stepNo),
+                    hasText(errorMsg) ? errorMsg : msg("notify.alert.stepFailDefault"), props, ch -> true);
         } catch (Exception e) {
             log.error("发布步骤告警处理失败: planId={}", planId, e);
         }
@@ -112,10 +119,45 @@ public class AlertService {
             props.put("crNumber", crNumber);
             props.put("operator", operator);
             dispatch(AlertEvents.PLAN_FAIL, "CRITICAL",
-                    "发布计划失败: " + planName,
-                    "计划 " + planName + " 已置为 FAILED（CR: " + crNumber + "）", props, ch -> true);
+                    msg("notify.alert.planFail", planName),
+                    msg("notify.alert.planFailMsg", planName, crNumber), props, ch -> true);
         } catch (Exception e) {
             log.error("发布计划告警处理失败: planId={}", planId, e);
+        }
+    }
+
+    /** 发布步骤成功事件（供通道按需订阅）。 */
+    public void onReleaseStepSuccess(Long planId, String planName, String crNumber, Integer stepNo,
+                                     String connKey, Long durationMs) {
+        try {
+            Map<String, Object> props = new LinkedHashMap<>();
+            props.put("planId", planId);
+            props.put("planName", planName);
+            props.put("crNumber", crNumber);
+            props.put("stepNo", stepNo);
+            props.put("connKey", connKey);
+            props.put("durationMs", durationMs);
+            dispatch(AlertEvents.RELEASE_STEP_SUCCESS, "INFO",
+                    msg("notify.alert.stepSuccess", planName, stepNo),
+                    msg("notify.alert.stepSuccessMsg", planName, stepNo), props, ch -> true);
+        } catch (Exception e) {
+            log.error("发布步骤成功事件处理失败: planId={}", planId, e);
+        }
+    }
+
+    /** 发布计划完成事件（供通道按需订阅）。 */
+    public void onPlanCompleted(Long planId, String planName, String crNumber, String operator) {
+        try {
+            Map<String, Object> props = new LinkedHashMap<>();
+            props.put("planId", planId);
+            props.put("planName", planName);
+            props.put("crNumber", crNumber);
+            props.put("operator", operator);
+            dispatch(AlertEvents.PLAN_COMPLETED, "INFO",
+                    msg("notify.alert.planCompleted", planName),
+                    msg("notify.alert.planCompletedMsg", planName, crNumber), props, ch -> true);
+        } catch (Exception e) {
+            log.error("发布计划完成事件处理失败: planId={}", planId, e);
         }
     }
 
@@ -132,8 +174,8 @@ public class AlertService {
             throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.notify.channelNotFound", channelId);
         }
         Map<String, Object> payload = buildPayload(AlertEvents.TEST, "INFO",
-                "sql-pipeline 测试事件", "通道 [" + channel.getName() + "] 连通性测试", Map.of());
-        return doSend(channel, AlertEvents.TEST, "sql-pipeline 测试事件", JsonUtils.toJson(payload));
+                msg("notify.alert.testTitle"), msg("notify.alert.testMessage", channel.getName()), Map.of());
+        return doSend(channel, AlertEvents.TEST, msg("notify.alert.testTitle"), JsonUtils.toJson(payload));
     }
 
     // ---------- 内部 ----------

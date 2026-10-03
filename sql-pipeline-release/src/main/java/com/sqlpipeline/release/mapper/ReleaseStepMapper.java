@@ -36,7 +36,9 @@ public interface ReleaseStepMapper {
 
     int markSkipped(@Param("id") Long id);
 
-    int incrementRetry(@Param("id") Long id);
+    int incrementRetry(@Param("id") Long id, @Param("remark") String remark);
+
+    int markConfirmed(@Param("id") Long id, @Param("operator") String operator);
 
     int deleteByPlan(@Param("planId") Long planId);
 }

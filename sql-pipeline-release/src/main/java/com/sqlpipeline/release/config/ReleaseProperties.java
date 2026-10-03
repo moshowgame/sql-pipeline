@@ -18,4 +18,13 @@ public class ReleaseProperties {
 
     /** 单条 SQL 语句超时秒数。 */
     private int statementTimeoutSec = 60;
+
+    /** 单步骤总超时秒数（0 = 不限制）；语句之间检查，超时后回滚并置 FAIL。 */
+    private int stepTotalTimeoutSec = 3600;
+
+    /** 异步驱动线程池大小（drive 与 retry 在池内执行，HTTP 立即返回）。 */
+    private int driverPoolSize = 2;
+
+    /** 异步驱动队列容量；满时由调用线程执行（退化为同步）。 */
+    private int driverQueueCapacity = 200;
 }

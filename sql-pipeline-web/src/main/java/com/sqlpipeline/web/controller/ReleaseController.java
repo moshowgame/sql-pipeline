@@ -12,6 +12,7 @@ import com.sqlpipeline.release.scanner.ScannedStepView;
 import com.sqlpipeline.web.dto.ReleaseCreateReq;
 import com.sqlpipeline.web.dto.ReleaseScanReq;
 import com.sqlpipeline.web.dto.ReleaseStartReq;
+import com.sqlpipeline.web.dto.RetryReq;
 import com.sqlpipeline.web.dto.StepConfigReq;
 import com.sqlpipeline.web.util.Operator;
 import jakarta.validation.Valid;
@@ -61,8 +62,11 @@ public class ReleaseController {
     public R<Map<String, Object>> detail(@PathVariable Long id) {
         Map<String, Object> detail = new LinkedHashMap<>();
         ReleasePlan plan = orchestrator.getPlan(id);
+        List<ReleaseStep> steps = orchestrator.listSteps(id);
+        // 脚本变更检测：当前目录哈希与 start 时存档对比
+        steps.forEach(s -> s.setScriptChanged(orchestrator.isScriptChanged(s)));
         detail.put("plan", plan);
-        detail.put("steps", orchestrator.listSteps(id));
+        detail.put("steps", steps);
         detail.put("stepConfigs", orchestrator.parseStepConfigs(plan.getStepConfig()));
         return R.ok(detail);
     }
@@ -83,8 +87,9 @@ public class ReleaseController {
 
     @PostMapping("/{id}/steps/{no}/retry")
     public R<Void> retry(@PathVariable Long id, @PathVariable int no,
+                         @RequestBody(required = false) RetryReq req,
                          @RequestHeader(value = Operator.HEADER, required = false) String operator) {
-        orchestrator.retryStep(id, no, Operator.of(operator));
+        orchestrator.retryStep(id, no, Operator.of(operator), req == null ? null : req.remark());
         return R.ok();
     }
 
@@ -96,8 +101,9 @@ public class ReleaseController {
     }
 
     @GetMapping("/{id}/logs")
-    public R<List<ReleaseSqlLog>> logs(@PathVariable Long id, @RequestParam(required = false) Integer stepNo) {
-        return R.ok(orchestrator.logs(id, stepNo));
+    public R<List<ReleaseSqlLog>> logs(@PathVariable Long id, @RequestParam(required = false) Integer stepNo,
+                                       @RequestParam(required = false) Integer runSeq) {
+        return R.ok(orchestrator.logs(id, stepNo, runSeq));
     }
 
     @GetMapping("/{id}/summaries")

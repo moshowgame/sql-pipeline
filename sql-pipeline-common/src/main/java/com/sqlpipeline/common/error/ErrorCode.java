@@ -32,6 +32,7 @@ public enum ErrorCode {
     RL_NO_WAITING_STEP("RL0005", 409, "当前无等待中的步骤"),
     RL_NOT_EXECUTOR("RL0006", 403, "非指定执行者"),
     RL_SCAN_FAILED("RL0007", 500, "目录扫描失败"),
+    RL_PLAN_BUSY("RL0008", 409, "计划正在被其他操作处理"),
     RL_STEP_EXEC_FAILED("RL0100", 500, "步骤执行失败");
 
     private final String code;

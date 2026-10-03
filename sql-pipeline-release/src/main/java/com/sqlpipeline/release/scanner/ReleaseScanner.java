@@ -27,7 +27,8 @@ import java.util.stream.Stream;
 @RequiredArgsConstructor
 public class ReleaseScanner {
 
-    private static final Pattern NUM_DIR = Pattern.compile("^\\d+$");
+    /** 纯数字且 ≥ 1（拒绝 0 与前导零，避免 step_no=0 或与 7/007 类冲突）。 */
+    private static final Pattern NUM_DIR = Pattern.compile("^[1-9]\\d*$");
 
     private final ReleaseProperties properties;
 

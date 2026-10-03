@@ -3,10 +3,11 @@
 <mapper namespace="com.sqlpipeline.release.mapper.ReleaseStepMapper">
 
     <insert id="batchInsert">
-        INSERT INTO release_step (plan_id, step_no, dir_path, conn_key, after_mode, executor, status)
+        INSERT INTO release_step (plan_id, step_no, dir_path, conn_key, after_mode, executor, status, script_hash)
         VALUES
         <foreach collection="steps" item="s" separator=",">
-            (#{s.planId}, #{s.stepNo}, #{s.dirPath}, #{s.connKey}, #{s.afterMode}, #{s.executor}, #{s.status})
+            (#{s.planId}, #{s.stepNo}, #{s.dirPath}, #{s.connKey}, #{s.afterMode}, #{s.executor}, #{s.status},
+             CAST(#{s.scriptHash,jdbcType=VARCHAR} AS VARCHAR))
         </foreach>
     </insert>
 
@@ -68,7 +69,11 @@
     </update>
 
     <update id="incrementRetry">
-        UPDATE release_step SET retry_count = retry_count + 1 WHERE id = #{id}
+        UPDATE release_step SET retry_count = retry_count + 1, retry_remark = #{remark,jdbcType=VARCHAR} WHERE id = #{id}
+    </update>
+
+    <update id="markConfirmed">
+        UPDATE release_step SET confirm_by = #{operator}, confirm_at = now() WHERE id = #{id}
     </update>
 
     <delete id="deleteByPlan">

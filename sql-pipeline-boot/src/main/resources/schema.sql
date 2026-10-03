@@ -134,6 +134,10 @@ CREATE TABLE IF NOT EXISTS release_step (
     after_mode  VARCHAR(16) NOT NULL DEFAULT 'CONTINUE',
     executor    VARCHAR(64),
     status      VARCHAR(24) NOT NULL DEFAULT 'PENDING',
+    confirm_by  VARCHAR(64),
+    confirm_at  TIMESTAMP,
+    retry_remark VARCHAR(512),
+    script_hash VARCHAR(64),
     started_at  TIMESTAMP,
     finished_at TIMESTAMP,
     duration_ms BIGINT,
@@ -142,8 +146,15 @@ CREATE TABLE IF NOT EXISTS release_step (
     CONSTRAINT uk_plan_step UNIQUE (plan_id, step_no)
 );
 CREATE INDEX IF NOT EXISTS idx_plan_status ON release_step (plan_id, status);
+ALTER TABLE release_step ADD COLUMN IF NOT EXISTS confirm_by VARCHAR(64);
+ALTER TABLE release_step ADD COLUMN IF NOT EXISTS confirm_at TIMESTAMP;
+ALTER TABLE release_step ADD COLUMN IF NOT EXISTS retry_remark VARCHAR(512);
+ALTER TABLE release_step ADD COLUMN IF NOT EXISTS script_hash VARCHAR(64);
 COMMENT ON TABLE  release_step            IS '发布步骤：PENDING|RUNNING|SUCCESS|FAIL|WAITING_CONTINUE|SKIPPED';
 COMMENT ON COLUMN release_step.after_mode IS 'CONTINUE 自动推进 | WAIT 等人工确认';
+COMMENT ON COLUMN release_step.confirm_by IS 'WAIT 步骤人工确认人（continue 时记录）';
+COMMENT ON COLUMN release_step.retry_remark IS '最近一次重试备注';
+COMMENT ON COLUMN release_step.script_hash IS 'start 时脚本内容 SHA-256（用于变更检测）';
 
 -- 6.2.7 发布 SQL 明细日志
 CREATE TABLE IF NOT EXISTS release_sql_log (
@@ -151,6 +162,8 @@ CREATE TABLE IF NOT EXISTS release_sql_log (
     plan_id     BIGINT,
     step_id     BIGINT,
     step_no     INT,
+    run_seq     INT,
+    operator    VARCHAR(64),
     file_name   VARCHAR(256),
     seq         INT,
     sql_preview VARCHAR(1024),
@@ -162,7 +175,9 @@ CREATE TABLE IF NOT EXISTS release_sql_log (
 CREATE INDEX IF NOT EXISTS idx_sql_log_step ON release_sql_log (step_id);
 CREATE INDEX IF NOT EXISTS idx_sql_log_plan ON release_sql_log (plan_id);
 ALTER TABLE release_sql_log ADD COLUMN IF NOT EXISTS step_no INT;
-COMMENT ON TABLE release_sql_log IS '发布 SQL 明细日志（step_no 冗余步骤号，重跑删步骤后日志仍可查）';
+ALTER TABLE release_sql_log ADD COLUMN IF NOT EXISTS run_seq INT;
+ALTER TABLE release_sql_log ADD COLUMN IF NOT EXISTS operator VARCHAR(64);
+COMMENT ON TABLE release_sql_log IS '发布 SQL 明细日志（step_no/run_seq 冗余：步骤删除或多轮重跑后日志仍可按计划查询区分）';
 
 -- 6.2.8 发布运行摘要（UAT 计时）
 CREATE TABLE IF NOT EXISTS release_run_summary (

@@ -84,11 +84,13 @@ function renderDetail(detail) {
         if (!actions.length) actions.push('<span class="text-muted">-</span>');
         return '<tr>' +
             '<td class="fw-bold">' + s.stepNo + '</td>' +
-            '<td class="mono sql-cell" title="' + App.escapeHtml(s.dirPath) + '">' + App.escapeHtml(s.dirPath) + '</td>' +
+            '<td class="mono sql-cell" title="' + App.escapeHtml(s.dirPath) + '">' + App.escapeHtml(s.dirPath) +
+            (s.scriptChanged ? ' <span class="badge bg-warning" title="' + App.escapeHtml(I18N.t('rel.steps.changed')) + '">⚠ ' + App.escapeHtml(I18N.t('rel.steps.changed')) + '</span>' : '') + '</td>' +
             '<td class="mono">' + App.escapeHtml(s.connKey || '-') + '</td>' +
             '<td>' + App.badge(s.afterMode, s.afterMode === 'WAIT' ? 'warning' : 'info') + '</td>' +
             '<td>' + (s.executor ? App.escapeHtml(s.executor) : '<span class="text-muted">' + I18N.t('common.unlimited') + '</span>') + '</td>' +
-            '<td>' + App.stepBadge(s.status) + '</td>' +
+            '<td>' + App.stepBadge(s.status) +
+            (s.confirmBy ? '<div class="text-muted small" style="font-weight:400">✓ ' + App.escapeHtml(I18N.t('rel.steps.confirmedBy', { name: s.confirmBy })) + ' ' + App.fmtTime(s.confirmAt) + '</div>' : '') + '</td>' +
             '<td class="mono">' + (s.retryCount || 0) + '</td>' +
             '<td class="mono">' + App.fmtMs(s.durationMs) + '</td>' +
             '<td class="sql-cell" style="max-width:200px" title="' + App.escapeHtml(s.errorMsg || '') + '">' + App.escapeHtml(s.errorMsg || '-') + '</td>' +
@@ -250,10 +252,12 @@ function doContinue() {
 }
 
 function doRetry(stepNo) {
-    App.api('POST', '/api/releases/' + currentPlanId + '/steps/' + stepNo + '/retry').then(function () {
-        App.toast(I18N.t('rel.toast.retried', { no: stepNo }));
-        loadDetail(currentPlanId);
-    });
+    const remark = prompt(I18N.t('rel.retry.remarkPrompt')) || null;
+    App.api('POST', '/api/releases/' + currentPlanId + '/steps/' + stepNo + '/retry', { remark: remark })
+        .then(function () {
+            App.toast(I18N.t('rel.toast.retried', { no: stepNo }));
+            loadDetail(currentPlanId);
+        });
 }
 
 function doRerun() {
@@ -272,17 +276,29 @@ function openLogs() {
     $filter.find('option:not(:first)').remove();
     currentSteps.forEach(s => $filter.append('<option value="' + s.stepNo + '">' + I18N.t('rel.logs.col.step') + ' ' + s.stepNo + '</option>'));
     $filter.val('');
-    $('#logsTable').html('<tr><td colspan="7" class="text-center text-muted py-3">' + App.escapeHtml(I18N.t('common.loading')) + '</td></tr>');
+    const $runFilter = $('#logsRunFilter');
+    $runFilter.find('option:not(:first)').remove();
+    const maxRun = (currentPlan.rerunCount || 0) + 1;
+    for (let i = 1; i <= maxRun; i++) {
+        $runFilter.append('<option value="' + i + '">' + I18N.t('rel.summary.round', { n: i }) + '</option>');
+    }
+    $runFilter.val('');
+    $('#logsTable').html('<tr><td colspan="8" class="text-center text-muted py-3">' + App.escapeHtml(I18N.t('common.loading')) + '</td></tr>');
     new bootstrap.Modal('#logsModal').show();
     loadLogs();
 }
 
 function loadLogs() {
     const stepNo = $('#logsStepFilter').val();
-    const url = '/api/releases/' + currentPlanId + '/logs' + (stepNo ? '?stepNo=' + stepNo : '');
+    const runSeq = $('#logsRunFilter').val();
+    const params = [];
+    if (stepNo) params.push('stepNo=' + stepNo);
+    if (runSeq) params.push('runSeq=' + runSeq);
+    const url = '/api/releases/' + currentPlanId + '/logs' + (params.length ? '?' + params.join('&') : '');
     App.api('GET', url).then(function (logs) {
         const rows = (logs || []).map(function (l) {
             return '<tr><td class="mono">' + l.seq + '</td>' +
+                '<td class="mono">' + (l.runSeq || '-') + '</td>' +
                 '<td class="mono">' + (l.stepNo || '-') + '</td>' +
                 '<td class="mono sql-cell" style="max-width:160px">' + App.escapeHtml(l.fileName) + '</td>' +
                 '<td class="sql-text" style="max-width:380px">' + App.escapeHtml(l.sqlPreview) + '</td>' +
@@ -291,7 +307,7 @@ function loadLogs() {
                 '<td class="sql-cell" style="max-width:180px" title="' + App.escapeHtml(l.errorMsg || '') + '">' + App.escapeHtml(l.errorMsg || '-') + '</td></tr>';
         });
         $('#logsTable').html(rows.length ? rows.join('') :
-            '<tr><td colspan="7" class="text-center text-muted py-3">' + App.escapeHtml(I18N.t('rel.logsModal.empty')) + '</td></tr>');
+            '<tr><td colspan="8" class="text-center text-muted py-3">' + App.escapeHtml(I18N.t('rel.logsModal.empty')) + '</td></tr>');
     });
 }
 

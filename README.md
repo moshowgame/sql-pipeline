@@ -106,7 +106,18 @@ java -jar sql-pipeline-boot/target/sql-pipeline-boot-1.0.0-SNAPSHOT.jar
 └── 5/01_verify.sql               # 目录 3、4 缺号：自动忽略，5 正常执行
 ```
 
-规则：一级子目录名必须为纯数字；非数字目录、空目录（无 `.sql`）忽略；不递归子目录；整个计划目录不存在 → 计划标记 `SKIPPED`；步骤执行前目录被删 → 该步骤 `SKIPPED` 继续。
+规则：一级子目录名必须为纯数字且 ≥1（`0`、`007` 等忽略）；非数字目录、空目录（无 `.sql`）忽略；不递归子目录；整个计划目录不存在 → 计划标记 `SKIPPED`；步骤执行前目录被删 → 该步骤 `SKIPPED` 继续。
+
+### 执行模型与高级特性
+
+- **异步驱动**：start/continue/retry/rerun 的 HTTP 请求仅完成校验与元数据写入后立即返回，实际执行在 `release-driver` 线程池进行，进度经 SSE 推送（`sql-pipeline.release.driver-pool-size` / `driver-queue-capacity`）。
+- **plan 级互斥（PG advisory lock）**：同一计划的驱动操作串行化，应用崩溃锁自动释放，天然支持多实例部署（持锁期间占用一个平台库连接）。
+- **步骤事务**：一个目录 = 一个事务，失败整目录回滚。若目录内放置**空的 `_nontransactional` 标记文件**，该步骤逐条自动提交、失败不回滚——用于 `CREATE INDEX CONCURRENTLY` 等 PostgreSQL 非事务 DDL（事务模式下出现 CONCURRENTLY 会直接拒绝并提示）。
+- **步骤总超时**：`sql-pipeline.release.step-total-timeout-sec`（默认 3600，0 = 不限制），语句间检查，超时回滚置 FAIL。
+- **脚本变更检测**：start 时记录各步骤脚本内容 SHA-256，详情页对当前目录实时对比，变更显示「脚本已变更 ⚠」。
+- **确认与重试审计**：WAIT 步骤 continue 时记录确认人/时间（confirm_by/confirm_at）；retry 支持可选备注（retry_remark）。
+- **日志轮次**：SQL 明细日志带 run_seq 与 operator，可按轮次过滤查看；失败与成功的运行均生成运行摘要。
+- **成功事件**：通道可订阅 `RELEASE_STEP_SUCCESS` / `PLAN_COMPLETED`（默认只订阅失败事件），与失败事件共用 xMatters 推送链路。
 
 ## API 一览
 
@@ -225,11 +236,10 @@ DRAFT --start(CR,Remark)--> RUNNING --全部完成--> COMPLETED
 | 5 | `retryStep` 成功后计划置 WAITING；此时 `continueNext` 无等待步骤时直接校验下一步执行者并推进 | 串起文档 §7.5.3 中 retry → continue 的状态闭环 |
 | 6 | `HealthCheckRun.rowCount` 受 `max_rows` 截断 | 文档 §14 要求 `setMaxRows` + `result_head` 截断；行数断言建议用 `SELECT COUNT(*)` |
 
-## 已知约束（一期）
+## 已知约束
 
-- **单实例部署**：发布编排基于 JVM 内 `ReentrantLock`，多实例需改造为数据库悲观锁或分布式锁（文档 §15.2）
+- ~~单实例部署~~：plan 级锁已改为 PG advisory lock，支持多实例（需共享发布目录）；多实例下健康检查连败计数为实例内各自统计
 - 目标库驱动仅内置 PostgreSQL；`release` 目录内的 SQL 应使用 PostgreSQL 方言（SqlSplitter 已支持 dollar-quote 函数体）
-- 应用运行中崩溃导致步骤卡在 RUNNING：请使用 rerun 重跑该计划
 - 一期不做：SQL 编辑器、多级审批、分布式事务、执行计划可视化、多租户
 
 ## 构建

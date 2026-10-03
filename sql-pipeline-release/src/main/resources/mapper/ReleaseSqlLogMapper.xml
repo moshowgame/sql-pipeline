@@ -3,8 +3,8 @@
 <mapper namespace="com.sqlpipeline.release.mapper.ReleaseSqlLogMapper">
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO release_sql_log (plan_id, step_id, step_no, file_name, seq, sql_preview, status, duration_ms, error_msg, executed_at)
-        VALUES (#{planId}, #{stepId}, #{stepNo}, #{fileName}, #{seq}, #{sqlPreview}, #{status}, #{durationMs}, #{errorMsg,jdbcType=VARCHAR}, now())
+        INSERT INTO release_sql_log (plan_id, step_id, step_no, run_seq, operator, file_name, seq, sql_preview, status, duration_ms, error_msg, executed_at)
+        VALUES (#{planId}, #{stepId}, #{stepNo}, #{runSeq}, #{operator}, #{fileName}, #{seq}, #{sqlPreview}, #{status}, #{durationMs}, #{errorMsg,jdbcType=VARCHAR}, now())
     </insert>
 
     <select id="selectByPlan" resultType="com.sqlpipeline.release.entity.ReleaseSqlLog">
@@ -12,6 +12,9 @@
         WHERE plan_id = #{planId}
         <if test="stepNo != null">
             AND step_no = #{stepNo}
+        </if>
+        <if test="runSeq != null">
+            AND run_seq = #{runSeq}
         </if>
         ORDER BY id
     </select>
