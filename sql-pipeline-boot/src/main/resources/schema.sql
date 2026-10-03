@@ -150,6 +150,7 @@ CREATE TABLE IF NOT EXISTS release_sql_log (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     plan_id     BIGINT,
     step_id     BIGINT,
+    step_no     INT,
     file_name   VARCHAR(256),
     seq         INT,
     sql_preview VARCHAR(1024),
@@ -160,7 +161,8 @@ CREATE TABLE IF NOT EXISTS release_sql_log (
 );
 CREATE INDEX IF NOT EXISTS idx_sql_log_step ON release_sql_log (step_id);
 CREATE INDEX IF NOT EXISTS idx_sql_log_plan ON release_sql_log (plan_id);
-COMMENT ON TABLE release_sql_log IS '发布 SQL 明细日志';
+ALTER TABLE release_sql_log ADD COLUMN IF NOT EXISTS step_no INT;
+COMMENT ON TABLE release_sql_log IS '发布 SQL 明细日志（step_no 冗余步骤号，重跑删步骤后日志仍可查）';
 
 -- 6.2.8 发布运行摘要（UAT 计时）
 CREATE TABLE IF NOT EXISTS release_run_summary (
@@ -175,3 +177,43 @@ CREATE TABLE IF NOT EXISTS release_run_summary (
     CONSTRAINT uk_plan_run UNIQUE (plan_id, run_seq)
 );
 COMMENT ON TABLE release_run_summary IS '发布运行摘要：第 run_seq 次运行的总耗时与各步耗时';
+
+-- 6.2.9 告警通道（xMatters 等外部 API）
+CREATE TABLE IF NOT EXISTS notify_channel (
+    id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name             VARCHAR(128) NOT NULL,
+    type             VARCHAR(32)  NOT NULL DEFAULT 'XMATTERS',
+    url              VARCHAR(512) NOT NULL,
+    auth_type        VARCHAR(16)  NOT NULL DEFAULT 'NONE',
+    username         VARCHAR(128),
+    auth_header_name VARCHAR(64)  DEFAULT 'apikey',
+    secret_enc       VARCHAR(512),
+    events           JSONB,
+    hc_fail_threshold INT         NOT NULL DEFAULT 1,
+    enabled          SMALLINT     NOT NULL DEFAULT 1,
+    created_by       VARCHAR(64),
+    created_at       TIMESTAMP    NOT NULL DEFAULT now(),
+    updated_by       VARCHAR(64),
+    updated_at       TIMESTAMP    NOT NULL DEFAULT now()
+);
+COMMENT ON TABLE  notify_channel             IS '告警通道：XMATTERS；订阅事件 HC_FAIL/RELEASE_STEP_FAIL/PLAN_FAIL';
+COMMENT ON COLUMN notify_channel.auth_type   IS 'NONE | BASIC | API_KEY';
+COMMENT ON COLUMN notify_channel.secret_enc  IS 'BASIC 密码 / API Key（AES-256-GCM 密文）';
+COMMENT ON COLUMN notify_channel.hc_fail_threshold IS '健康检查连续失败多少次才触发（1=每次失败即告警）';
+
+-- 6.2.10 告警推送日志
+CREATE TABLE IF NOT EXISTS notify_log (
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    channel_id    BIGINT,
+    channel_name  VARCHAR(128),
+    event         VARCHAR(32),
+    title         VARCHAR(256),
+    status        VARCHAR(16),
+    response_code INT,
+    response_body VARCHAR(1024),
+    error_msg     TEXT,
+    payload       TEXT,
+    created_at    TIMESTAMP NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_notify_log_time ON notify_log (created_at);
+COMMENT ON TABLE notify_log IS '告警推送日志：SUCCESS | FAIL';

@@ -21,6 +21,7 @@
     <modules>
         <module>sql-pipeline-common</module>
         <module>sql-pipeline-datasource</module>
+        <module>sql-pipeline-notify</module>
         <module>sql-pipeline-health</module>
         <module>sql-pipeline-release</module>
         <module>sql-pipeline-web</module>
@@ -46,6 +47,11 @@
             <dependency>
                 <groupId>com.sqlpipeline</groupId>
                 <artifactId>sql-pipeline-datasource</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.sqlpipeline</groupId>
+                <artifactId>sql-pipeline-notify</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

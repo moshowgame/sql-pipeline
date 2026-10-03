@@ -17,6 +17,8 @@ public interface ReleaseStepMapper {
 
     List<ReleaseStep> selectByPlan(@Param("planId") Long planId);
 
+    List<ReleaseStep> selectRunning();
+
     /** 下一个待处理步骤：PENDING 或 WAITING_CONTINUE 中序号最小者。 */
     ReleaseStep selectNextActionable(@Param("planId") Long planId);
 

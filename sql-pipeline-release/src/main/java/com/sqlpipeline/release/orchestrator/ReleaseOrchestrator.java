@@ -24,13 +24,17 @@ import com.sqlpipeline.release.scanner.ReleaseScanner;
 import com.sqlpipeline.release.scanner.ScannedStep;
 import com.sqlpipeline.release.scanner.ScannedStepView;
 import com.sqlpipeline.datasource.guard.SqlSplitter;
+import com.sqlpipeline.notify.service.AlertService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -79,6 +83,9 @@ public class ReleaseOrchestrator {
     private final ReleaseLockRegistry lockRegistry;
     private final ReleaseEventPublisher publisher;
     private final ReleaseProperties properties;
+    /** 仅用于 start 时"步骤落库 + 计划置 RUNNING"的元数据事务；步骤执行事务走目标库 JDBC，绝不共用 */
+    private final TransactionTemplate transactionTemplate;
+    private final AlertService alertService;
     private final ObjectProvider<MeterRegistry> meterRegistry;
 
     // ---------- 创建与预览 ----------
@@ -222,6 +229,48 @@ public class ReleaseOrchestrator {
         }
     }
 
+    // ---------- 启动恢复 ----------
+
+    /**
+     * 崩溃恢复：应用重启后
+     * 1) 卡在 RUNNING 的步骤 → FAIL（执行被中断，可人工重试）；
+     * 2) 仍处于 RUNNING 的计划：有 FAIL 步骤 → FAILED；仍有待执行步骤 → WAITING（人工 continue 恢复推进）；
+     *    全部步骤已终态 → 补记 COMPLETED。
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void recoverInterruptedRuns() {
+        try {
+            List<ReleaseStep> running = stepMapper.selectRunning();
+            for (ReleaseStep step : running) {
+                stepMapper.markFail(step.getId(), null, "应用重启，执行被中断");
+                log.warn("启动恢复: 步骤置 FAIL, planId={}, stepNo={}", step.getPlanId(), step.getStepNo());
+            }
+            for (ReleasePlan plan : planMapper.selectAll()) {
+                if (!PlanStatus.RUNNING.name().equals(plan.getStatus())) {
+                    continue;
+                }
+                Long planId = plan.getId();
+                if (stepMapper.countByStatus(planId, StepStatus.RUNNING.name()) > 0) {
+                    continue;
+                }
+                if (stepMapper.countByStatus(planId, StepStatus.FAIL.name()) > 0) {
+                    planMapper.updateStatus(planId, PlanStatus.FAILED.name());
+                    log.warn("启动恢复: 计划置 FAILED, planId={}", planId);
+                } else if (stepMapper.countByStatus(planId, StepStatus.PENDING.name()) > 0
+                        || stepMapper.countByStatus(planId, StepStatus.WAITING_CONTINUE.name()) > 0) {
+                    planMapper.updateStatus(planId, PlanStatus.WAITING.name());
+                    log.warn("启动恢复: 计划置 WAITING（等待人工 continue）, planId={}", planId);
+                } else {
+                    planMapper.markFinished(planId, PlanStatus.COMPLETED.name());
+                    recordSummary(planMapper.selectById(planId), plan.getRerunCount() + 1);
+                    log.warn("启动恢复: 计划补记 COMPLETED, planId={}", planId);
+                }
+            }
+        } catch (Exception e) {
+            log.error("启动恢复失败", e);
+        }
+    }
+
     // ---------- 查询 ----------
 
     public ReleasePlan getPlan(Long planId) {
@@ -288,9 +337,14 @@ public class ReleaseOrchestrator {
             step.setStatus(StepStatus.PENDING.name());
             steps.add(step);
         }
-        stepMapper.batchInsert(steps);
+        // 启动即校验第一步执行者（后续步骤在 continue/retry 时校验）
+        assertExecutor(steps.get(0), operator);
 
-        planMapper.updateForStart(planId, crNumber, remark, operator, PlanStatus.RUNNING.name());
+        // 元数据写入保持原子：避免"步骤已落库但计划仍 DRAFT"的中间态
+        transactionTemplate.executeWithoutResult(tx -> {
+            stepMapper.batchInsert(steps);
+            planMapper.updateForStart(planId, crNumber, remark, operator, PlanStatus.RUNNING.name());
+        });
         publisher.sendPlan(planId, Map.of("planId", planId, "status", PlanStatus.RUNNING.name()));
         log.info("发布计划启动: planId={}, planName={}, steps={}, operator={}, cr={}",
                 planId, plan.getPlanName(), steps.size(), operator, crNumber);
@@ -320,6 +374,7 @@ public class ReleaseOrchestrator {
                 planMapper.updateStatus(planId, PlanStatus.FAILED.name());
                 publisher.sendPlan(planId, Map.of("planId", planId, "status", PlanStatus.FAILED.name(),
                         "failStep", done.getStepNo()));
+                notifyPlanFail(planId);
                 return;
             }
             if (StepStatus.SUCCESS.name().equals(done.getStatus())
@@ -340,6 +395,7 @@ public class ReleaseOrchestrator {
         if (fails > 0) {
             planMapper.updateStatus(planId, PlanStatus.FAILED.name());
             publisher.sendPlan(planId, Map.of("planId", planId, "status", PlanStatus.FAILED.name()));
+            notifyPlanFail(planId);
         } else {
             planMapper.markFinished(planId, PlanStatus.COMPLETED.name());
             ReleasePlan plan = planMapper.selectById(planId);
@@ -390,6 +446,15 @@ public class ReleaseOrchestrator {
             ReleaseStep after = stepMapper.selectById(step.getId());
             if (after != null) {
                 recordStepMetrics(step.getPlanId(), step.getStepNo(), after.getStatus(), after.getDurationMs());
+                // 告警钩子：步骤失败即告警（RELEASE_STEP_FAIL）
+                if (StepStatus.FAIL.name().equals(after.getStatus())) {
+                    ReleasePlan plan = planMapper.selectById(step.getPlanId());
+                    alertService.onReleaseStepFail(step.getPlanId(),
+                            plan == null ? null : plan.getPlanName(),
+                            plan == null ? null : plan.getCrNumber(),
+                            step.getStepNo(), step.getConnKey(),
+                            after.getRetryCount(), after.getDurationMs(), after.getErrorMsg());
+                }
             }
         }
     }
@@ -431,6 +496,7 @@ public class ReleaseOrchestrator {
             ReleaseSqlLog logRow = new ReleaseSqlLog();
             logRow.setPlanId(step.getPlanId());
             logRow.setStepId(step.getId());
+            logRow.setStepNo(step.getStepNo());
             logRow.setFileName(file.getFileName().toString());
             logRow.setSeq(seq);
             logRow.setSqlPreview(JsonUtils.truncate(sql, 1000));
@@ -541,6 +607,18 @@ public class ReleaseOrchestrator {
         payload.put("stepNo", step.getStepNo());
         payload.put("status", status);
         publisher.sendStep(step.getPlanId(), payload);
+    }
+
+    /** PLAN_FAIL 告警钩子。 */
+    private void notifyPlanFail(Long planId) {
+        try {
+            ReleasePlan plan = planMapper.selectById(planId);
+            if (plan != null) {
+                alertService.onPlanFail(plan.getId(), plan.getPlanName(), plan.getCrNumber(), plan.getOperator());
+            }
+        } catch (Exception e) {
+            log.debug("PLAN_FAIL 告警上报失败: planId={}", planId);
+        }
     }
 
     private void recordStepMetrics(Long planId, int stepNo, String status, Long durationMs) {

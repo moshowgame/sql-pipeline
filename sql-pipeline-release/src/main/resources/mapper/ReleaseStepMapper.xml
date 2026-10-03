@@ -22,6 +22,10 @@
         SELECT * FROM release_step WHERE plan_id = #{planId} ORDER BY step_no
     </select>
 
+    <select id="selectRunning" resultType="com.sqlpipeline.release.entity.ReleaseStep">
+        SELECT * FROM release_step WHERE status = 'RUNNING'
+    </select>
+
     <select id="selectNextActionable" resultType="com.sqlpipeline.release.entity.ReleaseStep">
         SELECT * FROM release_step
         WHERE plan_id = #{planId} AND status IN ('PENDING', 'WAITING_CONTINUE')

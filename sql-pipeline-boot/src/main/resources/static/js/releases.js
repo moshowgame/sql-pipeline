@@ -76,12 +76,7 @@ function renderDetail(detail) {
     $('#btnContinue').prop('disabled', st !== 'WAITING');
     $('#btnRerun').prop('disabled', st === 'RUNNING');
 
-    const stepConfigs = detail.stepConfigs || [];
-    const cfgByNo = {};
-    stepConfigs.forEach(c => { cfgByNo[c.stepNo] = c; });
-
     const rows = currentSteps.map(function (s) {
-        const cfg = cfgByNo[s.stepNo];
         const actions = [];
         if (s.status === 'FAIL') actions.push('<button class="btn btn-outline-danger btn-sm" onclick="doRetry(' + s.stepNo + ')">重试</button>');
         if (s.status === 'WAITING_CONTINUE') actions.push('<span class="text-warning fw-bold">⏸ 等待人工确认</span>');
@@ -92,7 +87,7 @@ function renderDetail(detail) {
             '<td class="mono sql-cell" title="' + App.escapeHtml(s.dirPath) + '">' + App.escapeHtml(s.dirPath) + '</td>' +
             '<td class="mono">' + App.escapeHtml(s.connKey || '-') + '</td>' +
             '<td>' + App.badge(s.afterMode, s.afterMode === 'WAIT' ? 'warning text-dark' : 'info') + '</td>' +
-            '<td>' + (cfg && cfg.executor ? App.escapeHtml(cfg.executor) : '<span class="text-muted">不限</span>') + '</td>' +
+            '<td>' + (s.executor ? App.escapeHtml(s.executor) : '<span class="text-muted">不限</span>') + '</td>' +
             '<td>' + App.stepBadge(s.status) + '</td>' +
             '<td class="mono">' + (s.retryCount || 0) + '</td>' +
             '<td class="mono">' + App.fmtMs(s.durationMs) + '</td>' +

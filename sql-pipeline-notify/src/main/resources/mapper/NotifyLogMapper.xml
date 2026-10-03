@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sqlpipeline.notify.mapper.NotifyLogMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO notify_log (channel_id, channel_name, event, title, status, response_code, response_body, error_msg, payload, created_at)
+        VALUES (#{channelId}, #{channelName}, #{event}, #{title}, #{status},
+                #{responseCode}, #{responseBody,jdbcType=VARCHAR}, #{errorMsg,jdbcType=VARCHAR}, #{payload,jdbcType=VARCHAR}, now())
+    </insert>
+
+    <select id="selectRecent" resultType="com.sqlpipeline.notify.entity.NotifyLog">
+        SELECT * FROM notify_log ORDER BY id DESC LIMIT #{limit}
+    </select>
+</mapper>

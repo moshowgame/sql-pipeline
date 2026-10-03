@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>告警通知 - sql-pipeline</title>
+    <link rel="stylesheet" href="/lib/bootstrap-5.2.3/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<nav class="navbar navbar-expand navbar-dark bg-dark mb-4">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">⇄ sql-pipeline</a>
+        <ul class="navbar-nav me-auto">
+            <li class="nav-item"><a class="nav-link" href="/">总览</a></li>
+            <li class="nav-item"><a class="nav-link" href="/connections.html">连接管理</a></li>
+            <li class="nav-item"><a class="nav-link" href="/health-checks.html">健康检查</a></li>
+            <li class="nav-item"><a class="nav-link" href="/releases.html">发布编排</a></li>
+            <li class="nav-item"><a class="nav-link active" href="/notify.html">告警通知</a></li>
+        </ul>
+        <div class="d-flex align-items-center text-white-50">
+            <span class="me-2 small">操作者</span>
+            <input id="operatorInput" class="form-control form-control-sm" style="width:130px" placeholder="X-Operator">
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">告警通道（xMatters API）</h5>
+        <button class="btn btn-primary btn-sm" onclick="openCreate()">+ 新建通道</button>
+    </div>
+
+    <div class="card page-card">
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                <tr>
+                    <th>ID</th><th>名称</th><th>类型</th><th>触发地址</th><th>认证</th>
+                    <th>订阅事件</th><th>HC 连败阈值</th><th>状态</th><th style="min-width:200px">操作</th>
+                </tr>
+                </thead>
+                <tbody id="channelTable"><tr><td colspan="9" class="text-center text-muted py-4">加载中…</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+    <p class="text-muted small">事件说明：<code>HC_FAIL</code> 健康检查失败（FAIL/ERROR/TIMEOUT，成功自动清零连败计数）；
+        <code>RELEASE_STEP_FAIL</code> 发布步骤失败；<code>PLAN_FAIL</code> 发布计划失败。连续失败阈值 N 表示连续失败第 N 次时告警一次（1 = 每次都告警）。</p>
+
+    <h5 class="mt-4 mb-3">推送日志（最近 50 条）</h5>
+    <div class="card page-card">
+        <div class="card-body p-0">
+            <table class="table table-sm table-hover mb-0 align-middle">
+                <thead class="table-light">
+                <tr><th>时间</th><th>通道</th><th>事件</th><th>标题</th><th>状态</th><th>响应 / 错误</th></tr>
+                </thead>
+                <tbody id="logTable"><tr><td colspan="6" class="text-center text-muted py-4">加载中…</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 新建/编辑通道 -->
+<div class="modal fade" id="channelModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="channelModalTitle">新建告警通道</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="channelForm" class="row g-3">
+                    <input type="hidden" id="channelId">
+                    <div class="col-md-4">
+                        <label class="form-label">通道名称 <span class="text-danger">*</span></label>
+                        <input id="nName" class="form-control form-control-sm" maxlength="128">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">类型</label>
+                        <select id="nType" class="form-select form-select-sm">
+                            <option value="XMATTERS">xMatters API</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">状态</label>
+                        <select id="nEnabled" class="form-select form-select-sm">
+                            <option value="1">启用</option><option value="0">停用</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">HC 连败阈值</label>
+                        <input id="nThreshold" type="number" class="form-control form-control-sm" value="1" min="1">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">xMatters 触发 URL <span class="text-danger">*</span></label>
+                        <input id="nUrl" class="form-control form-control-sm mono"
+                               placeholder="https://yourco.xmatters.com/api/integration/1/functions/{id}/trigger">
+                        <div class="form-text">xMatters 入站集成（Inbound Integration）或 Flow Designer Webhook 触发地址</div>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">认证方式</label>
+                        <select id="nAuthType" class="form-select form-select-sm">
+                            <option value="NONE">NONE（公开 Webhook）</option>
+                            <option value="BASIC">BASIC（用户名/密码）</option>
+                            <option value="API_KEY">API Key（Header）</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3" id="usernameWrap">
+                        <label class="form-label">用户名（BASIC）</label>
+                        <input id="nUsername" class="form-control form-control-sm" autocomplete="off">
+                    </div>
+                    <div class="col-md-3" id="headerWrap">
+                        <label class="form-label">API Key Header 名</label>
+                        <input id="nAuthHeader" class="form-control form-control-sm mono" value="apikey" placeholder="apikey">
+                    </div>
+                    <div class="col-md-3" id="secretWrap">
+                        <label class="form-label">密码 / API Key</label>
+                        <input id="nSecret" type="password" class="form-control form-control-sm" autocomplete="new-password">
+                        <div class="form-text" id="secretHint">编辑时留空 = 保持不变</div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">订阅事件</label>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input ev" type="checkbox" id="evHc" value="HC_FAIL" checked>
+                            <label class="form-check-label" for="evHc">HC_FAIL 健康检查失败</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input ev" type="checkbox" id="evStep" value="RELEASE_STEP_FAIL" checked>
+                            <label class="form-check-label" for="evStep">RELEASE_STEP_FAIL 步骤失败</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input ev" type="checkbox" id="evPlan" value="PLAN_FAIL" checked>
+                            <label class="form-check-label" for="evPlan">PLAN_FAIL 计划失败</label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+                <button class="btn btn-primary btn-sm" onclick="saveChannel()">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/lib/jquery/jquery-3.7.1.min.js"></script>
+<script src="/lib/bootstrap-5.2.3/js/bootstrap.bundle.min.js"></script>
+<script src="/js/common.js"></script>
+<script src="/js/notify.js"></script>
+</body>
+</html>

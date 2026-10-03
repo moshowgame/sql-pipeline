@@ -10,9 +10,9 @@
         <version>1.0.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>sql-pipeline-release</artifactId>
-    <name>sql-pipeline-release</name>
-    <description>发布编排：目录扫描、状态机驱动、WAIT/CONTINUE 卡点、重跑统计</description>
+    <artifactId>sql-pipeline-notify</artifactId>
+    <name>sql-pipeline-notify</name>
+    <description>告警通知：xMatters API 通道、事件分发、通知日志</description>
 
     <dependencies>
         <dependency>
@@ -24,20 +24,8 @@
             <artifactId>sql-pipeline-datasource</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.sqlpipeline</groupId>
-            <artifactId>sql-pipeline-notify</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.mybatis.spring.boot</groupId>
             <artifactId>mybatis-spring-boot-starter</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-core</artifactId>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>

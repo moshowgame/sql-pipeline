@@ -23,6 +23,7 @@ import com.sqlpipeline.health.mapper.HealthCheckRunMapper;
 import com.sqlpipeline.health.mapper.SqlDefinitionHistoryMapper;
 import com.sqlpipeline.health.mapper.SqlDefinitionMapper;
 import com.sqlpipeline.health.scheduler.HealthCheckScheduler;
+import com.sqlpipeline.notify.service.AlertService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -58,6 +59,7 @@ public class HealthCheckService {
     private final DynamicSqlExecutor executor;
     private final AssertEvaluator evaluator;
     private final HealthProperties properties;
+    private final AlertService alertService;
     // 通过 ObjectProvider 延迟获取，打破 scheduler ↔ service 的构造期循环依赖
     private final ObjectProvider<HealthCheckScheduler> schedulerProvider;
     private final ObjectProvider<MeterRegistry> meterRegistry;
@@ -163,6 +165,9 @@ public class HealthCheckService {
             run.setDurationMs(System.currentTimeMillis() - t0);
             runMapper.updateResult(run);
             recordMetrics(defId, run.getStatus(), run.getDurationMs());
+            // 告警钩子：FAIL/ERROR/TIMEOUT 上报（连续失败计数、通道阈值过滤在 notify 模块内）
+            alertService.onHealthCheckFinished(defId, def.getName(), def.getConnKey(),
+                    run.getStatus(), run.getId(), run.getDurationMs(), run.getErrorMsg(), run.getAssertMsg());
         }
         log.info("健康检查执行完成: defId={}, version={}, status={}, durationMs={}",
                 defId, run.getVersion(), run.getStatus(), run.getDurationMs());

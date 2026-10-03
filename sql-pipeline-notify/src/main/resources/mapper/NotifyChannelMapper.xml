@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sqlpipeline.notify.mapper.NotifyChannelMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO notify_channel (
+            name, type, url, auth_type, username, auth_header_name, secret_enc,
+            events, hc_fail_threshold, enabled, created_by, created_at, updated_by, updated_at
+        ) VALUES (
+            #{name}, #{type}, #{url}, #{authType}, #{username},
+            CAST(#{authHeaderName,jdbcType=VARCHAR} AS VARCHAR),
+            CAST(#{secretEnc,jdbcType=VARCHAR} AS VARCHAR),
+            CAST(#{events,jdbcType=VARCHAR} AS jsonb),
+            #{hcFailThreshold}, #{enabled}, #{createdBy}, now(), #{updatedBy}, now()
+        )
+    </insert>
+
+    <update id="update">
+        UPDATE notify_channel
+        SET name             = #{name},
+            type             = #{type},
+            url              = #{url},
+            auth_type        = #{authType},
+            username         = #{username},
+            auth_header_name = CAST(#{authHeaderName,jdbcType=VARCHAR} AS VARCHAR),
+            secret_enc       = CAST(#{secretEnc,jdbcType=VARCHAR} AS VARCHAR),
+            events           = CAST(#{events,jdbcType=VARCHAR} AS jsonb),
+            hc_fail_threshold = #{hcFailThreshold},
+            enabled          = #{enabled},
+            updated_by       = #{updatedBy},
+            updated_at       = now()
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM notify_channel WHERE id = #{id}
+    </delete>
+
+    <select id="selectById" resultType="com.sqlpipeline.notify.entity.NotifyChannel">
+        SELECT * FROM notify_channel WHERE id = #{id}
+    </select>
+
+    <select id="selectAll" resultType="com.sqlpipeline.notify.entity.NotifyChannel">
+        SELECT * FROM notify_channel ORDER BY id
+    </select>
+
+    <select id="selectEnabled" resultType="com.sqlpipeline.notify.entity.NotifyChannel">
+        SELECT * FROM notify_channel WHERE enabled = 1 ORDER BY id
+    </select>
+</mapper>
