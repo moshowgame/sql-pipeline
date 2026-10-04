@@ -50,14 +50,14 @@ function loadDetail(planId, keepScroll) {
         currentPlan = detail.plan;
         currentPlanId = detail.plan.id;
         currentSteps = detail.steps || [];
-        renderDetail(detail);
+        renderDetail(detail, keepScroll);
         $('#detailCard').removeClass('d-none');
         subscribeSse(planId);
         if (keepScroll) $(window).scrollTop(scrollTop);
     });
 }
 
-function renderDetail(detail) {
+function renderDetail(detail, keepScroll) {
     const p = detail.plan;
     $('#detailTitle').text('#' + p.id + ' ' + p.planName);
     $('#detailStatus').html(App.planBadge(p.status));
@@ -77,6 +77,9 @@ function renderDetail(detail) {
     $('#btnRerun').prop('disabled', st === 'RUNNING');
 
     renderPipeline();
+    if (!keepScroll) {
+        document.getElementById('detailCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
 }
 
 // ---------- Pipeline 可视化 ----------
@@ -105,6 +108,8 @@ function renderPipeline() {
         return '<span class="pl-lg-dot" style="background:' + PL_STATUS_COLORS[st] + '"></span>' + st;
     }).join(''));
 
+    renderProgress();
+
     const $pl = $('#pipeline').removeClass('horizontal vertical').addClass(orient);
     if (!currentSteps.length) {
         $pl.html('<div class="text-muted small py-3">' + App.escapeHtml(I18N.t('rel.steps.none')) + '</div>');
@@ -121,6 +126,32 @@ function renderPipeline() {
         prev = s;
     });
     $pl.html(html.join(''));
+}
+
+/** 计划进度条：按步骤状态分段（成功绿 / 失败红 / 跳过灰）。 */
+function renderProgress() {
+    const $bar = $('#plProgress');
+    if (!currentSteps.length) {
+        $bar.empty();
+        return;
+    }
+    const total = currentSteps.length;
+    const count = st => currentSteps.filter(s => s.status === st).length;
+    const ok = count('SUCCESS'), fail = count('FAIL'), skip = count('SKIPPED');
+    const wait = count('WAITING_CONTINUE'), run = count('RUNNING');
+    const done = ok + skip;
+    const pct = n => total ? (n / total * 100).toFixed(1) : 0;
+    let summary = I18N.t('rel.pl.progress', { done: done, total: total });
+    if (fail) summary += ' · <span class="text-danger fw-bold">' + fail + ' FAIL</span>';
+    if (wait) summary += ' · <span class="text-warning fw-bold">' + wait + ' WAITING</span>';
+    if (run) summary += ' · <span class="text-primary fw-bold">' + run + ' RUNNING</span>';
+    $bar.html(
+        '<div class="small text-muted mb-1">' + summary + '</div>' +
+        '<div class="progress" style="height:8px">' +
+        '<div class="progress-bar bg-success" style="width:' + pct(ok) + '%"></div>' +
+        (fail ? '<div class="progress-bar bg-danger" style="width:' + pct(fail) + '%"></div>' : '') +
+        (skip ? '<div class="progress-bar bg-secondary" style="width:' + pct(skip) + '%"></div>' : '') +
+        '</div>');
 }
 
 function nodeHtml(s) {
@@ -178,6 +209,14 @@ function openStepResult(stepNo) {
     if (s.errorMsg) {
         html += '<div class="alert alert-danger py-2 sql-text">' + App.escapeHtml(s.errorMsg) + '</div>';
     }
+    // 操作区：FAIL → 重试（带备注）；WAITING_CONTINUE → 确认并继续
+    if (s.status === 'FAIL') {
+        html += '<div class="input-group input-group-sm mb-3" style="max-width:440px">' +
+            '<input id="stepRetryRemark" class="form-control" maxlength="512" placeholder="' + App.escapeHtml(I18N.t('rel.pl.remarkPlaceholder')) + '">' +
+            '<button class="btn btn-danger" onclick="retryFromModal(' + s.stepNo + ')">' + App.escapeHtml(I18N.t('rel.steps.retry')) + '</button></div>';
+    } else if (s.status === 'WAITING_CONTINUE') {
+        html += '<button class="btn btn-warning text-dark btn-sm mb-3" onclick="confirmFromModal()">' + App.escapeHtml(I18N.t('rel.pl.confirmContinue')) + '</button>';
+    }
     html += '<div class="fw-bold small mb-1 mt-2">' + I18N.t('rel.pl.logs') + '</div>' +
         '<div id="stepLogsBody"><span class="text-muted small">' + App.escapeHtml(I18N.t('common.loading')) + '</span></div>';
     $('#stepResultBody').html(html);
@@ -201,6 +240,21 @@ function openStepResult(stepNo) {
                 '<tr><td colspan="6" class="text-center text-muted py-2">' + App.escapeHtml(I18N.t('rel.logsModal.empty')) + '</td></tr>') +
             '</tbody></table>');
     });
+}
+
+function retryFromModal(stepNo) {
+    const remark = document.getElementById('stepRetryRemark').value.trim() || null;
+    App.api('POST', '/api/releases/' + currentPlanId + '/steps/' + stepNo + '/retry', { remark: remark })
+        .then(function () {
+            App.toast(I18N.t('rel.toast.retried', { no: stepNo }));
+            bootstrap.Modal.getInstance(document.getElementById('stepResultModal')).hide();
+            loadDetail(currentPlanId, true);
+        });
+}
+
+function confirmFromModal() {
+    bootstrap.Modal.getInstance(document.getElementById('stepResultModal')).hide();
+    doContinue();
 }
 
 function infoCell(label, value) {
@@ -352,15 +406,6 @@ function doContinue() {
         App.toast(I18N.t('rel.toast.continued'));
         loadDetail(currentPlanId);
     });
-}
-
-function doRetry(stepNo) {
-    const remark = prompt(I18N.t('rel.retry.remarkPrompt')) || null;
-    App.api('POST', '/api/releases/' + currentPlanId + '/steps/' + stepNo + '/retry', { remark: remark })
-        .then(function () {
-            App.toast(I18N.t('rel.toast.retried', { no: stepNo }));
-            loadDetail(currentPlanId);
-        });
 }
 
 function doRerun() {

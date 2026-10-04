@@ -120,7 +120,7 @@ function saveDef() {
     req.then(function () {
         App.toast(id ? I18N.t('hc.toast.saveUpdated') : I18N.t('hc.toast.saveCreated'));
         bootstrap.Modal.getInstance($('#defModal')[0]).hide();
-        setTimeout(function () { location.reload(); }, 600);
+        loadListQuietly();
     });
 }
 

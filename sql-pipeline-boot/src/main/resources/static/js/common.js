@@ -102,11 +102,28 @@ window.App = {
     bindOperator() {
         const $input = $('#operatorInput');
         $input.val(App.operator);
-        $input.on('change', function () {
-            App.operator = $(this).val().trim() || 'admin';
-            localStorage.setItem('operator', App.operator);
-            App.toast(I18N.t('toast.operatorSwitched', { name: App.operator }));
+        let timer = null;
+        const commit = function () {
+            clearTimeout(timer);
+            const v = $input.val().trim() || 'admin';
+            if (v !== App.operator) {
+                App.operator = v;
+                localStorage.setItem('operator', App.operator);
+                App.toast(I18N.t('toast.operatorSwitched', { name: App.operator }));
+            }
+        };
+        // input 事件即时生效（防抖），Enter 立即提交；change 兜底
+        $input.on('input', function () {
+            clearTimeout(timer);
+            timer = setTimeout(commit, 400);
         });
+        $input.on('keydown', function (e) {
+            if (e.key === 'Enter') {
+                commit();
+                $input.blur();
+            }
+        });
+        $input.on('change', commit);
     }
 };
 
