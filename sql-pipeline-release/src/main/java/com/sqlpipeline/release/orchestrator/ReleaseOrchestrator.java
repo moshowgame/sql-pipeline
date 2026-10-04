@@ -102,8 +102,59 @@ public class ReleaseOrchestrator {
 
     // ---------- 创建与预览 ----------
 
-    public ReleasePlan create(String planName, String defaultConnKey, List<StepConfig> stepConfigs, String operator) {
+    public ReleasePlan create(String planName, String releaseType, String releasePath,
+                              String defaultConnKey, List<StepConfig> stepConfigs, String operator) {
         Path base = requireBaseDir();
+        String type = validatePlanConfig(releaseType, releasePath, defaultConnKey, stepConfigs);
+        if ("FOLDER".equals(type)) {
+            resolveReleasePath(releasePath);
+        }
+        ReleasePlan plan = new ReleasePlan();
+        plan.setPlanName(planName);
+        plan.setBasePath(base.toString());
+        plan.setReleaseType(type);
+        plan.setReleasePath(releasePath.trim());
+        plan.setDefaultConnKey(defaultConnKey);
+        plan.setStepConfig(JsonUtils.toJson(stepConfigs == null ? List.of() : stepConfigs));
+        plan.setStatus(PlanStatus.DRAFT.name());
+        plan.setCreatedBy(operator);
+        planMapper.insert(plan);
+        log.info("发布计划已创建: id={}, planName={}, type={}, path={}, createdBy={}",
+                plan.getId(), planName, type, releasePath, operator);
+        return plan;
+    }
+
+    /** 编辑计划（仅 DRAFT 可编辑，一旦启动过只能查看）：更新类型/路径/默认连接/步骤配置；planName 不可改。 */
+    public void update(Long planId, String releaseType, String releasePath,
+                       String defaultConnKey, List<StepConfig> stepConfigs, String operator) {
+        ReleasePlan plan = requirePlan(planId);
+        if (!PlanStatus.DRAFT.name().equals(plan.getStatus())) {
+            throw BizException.i18n(ErrorCode.RL_PLAN_ALREADY_STARTED,
+                    "error.rl.editOnlyDraft", plan.getStatus());
+        }
+        String type = validatePlanConfig(releaseType, releasePath, defaultConnKey, stepConfigs);
+        if ("FOLDER".equals(type)) {
+            resolveReleasePath(releasePath);
+        }
+        plan.setReleaseType(type);
+        plan.setReleasePath(releasePath.trim());
+        plan.setDefaultConnKey(defaultConnKey);
+        plan.setStepConfig(JsonUtils.toJson(stepConfigs == null ? List.of() : stepConfigs));
+        planMapper.updateConfig(plan);
+        log.info("发布计划已编辑: id={}, type={}, path={}, operator={}",
+                planId, type, releasePath, operator);
+    }
+
+    /** 创建/编辑共用的配置校验，返回规范化的 release type。 */
+    private String validatePlanConfig(String releaseType, String releasePath,
+                                      String defaultConnKey, List<StepConfig> stepConfigs) {
+        if (!hasText(releasePath)) {
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.pathRequired");
+        }
+        String type = hasText(releaseType) ? releaseType.toUpperCase() : "FOLDER";
+        if (!"FOLDER".equals(type) && !"ZIP".equals(type)) {
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.typeInvalid", releaseType);
+        }
         validateConnKey(defaultConnKey);
         for (StepConfig c : stepConfigs == null ? List.<StepConfig>of() : stepConfigs) {
             if (c.stepNo() == null || c.stepNo() < 1) {
@@ -116,27 +167,26 @@ public class ReleaseOrchestrator {
                         "error.rl.afterModeInvalid", c.afterMode());
             }
         }
-        ReleasePlan plan = new ReleasePlan();
-        plan.setPlanName(planName);
-        plan.setBasePath(base.toString());
-        plan.setDefaultConnKey(defaultConnKey);
-        plan.setStepConfig(JsonUtils.toJson(stepConfigs == null ? List.of() : stepConfigs));
-        plan.setStatus(PlanStatus.DRAFT.name());
-        plan.setCreatedBy(operator);
-        planMapper.insert(plan);
-        log.info("发布计划已创建: id={}, planName={}, createdBy={}", plan.getId(), planName, operator);
-        return plan;
+        return type;
     }
 
-    /** 预览目录结构与步骤配置合并结果（不落库）。 */
-    public List<ScannedStepView> preview(String planName, String defaultConnKey, List<StepConfig> stepConfigs) {
-        Path base = requireBaseDir();
-        Path planDir = resolvePlanDir(base.toString(), planName);
-        Map<Integer, StepConfig> cfgMap = indexConfigs(stepConfigs);
+    /** 扫描 release path 下的数字子目录（asc），返回步骤视图（ZIP 类型暂未实现）。 */
+    public List<ScannedStepView> preview(String releaseType, String releasePath,
+                                         String defaultConnKey, List<StepConfig> stepConfigs) {
+        Path planDir = releaseDir(releaseType, releasePath);
+        Map<String, StepConfig> cfgByDir = new HashMap<>();
+        if (stepConfigs != null) {
+            for (StepConfig c : stepConfigs) {
+                if (hasText(c.dirName())) {
+                    cfgByDir.put(c.dirName(), c);
+                }
+            }
+        }
         return scanner.scan(planDir).stream()
                 .map(s -> {
-                    StepConfig c = cfgMap.get(s.no());
-                    return new ScannedStepView(s.no(), s.dir().getFileName().toString(),
+                    String dirName = s.dir().getFileName().toString();
+                    StepConfig c = cfgByDir.get(dirName);
+                    return new ScannedStepView(s.no(), dirName,
                             s.sqlFiles().stream().map(p -> p.getFileName().toString()).toList(),
                             c != null && hasText(c.connKey()) ? c.connKey() : defaultConnKey,
                             c == null || !hasText(c.afterMode()) ? AfterMode.CONTINUE.name()
@@ -321,7 +371,7 @@ public class ReleaseOrchestrator {
     // ---------- 内部：状态机驱动（必须持锁） ----------
 
     /**
-     * 启动元数据：校验 DRAFT → 扫描 → 步骤落库（含脚本哈希）→ 计划置 RUNNING。
+     * 启动元数据：校验 DRAFT → 扫描（按配置 dirName 映射、可重编 step_no）→ 步骤落库 → 计划置 RUNNING。
      * 返回是否需要驱动（目录为空时计划已置 SKIPPED，返回 false）。调用方需持锁。
      */
     private boolean prepareStart(Long planId, String crNumber, String remark, String operator) {
@@ -330,7 +380,7 @@ public class ReleaseOrchestrator {
             throw BizException.i18n(ErrorCode.RL_PLAN_ALREADY_STARTED,
                     "error.rl.notDraft", plan.getStatus());
         }
-        List<ScannedStep> scanned = scanner.scan(resolvePlanDir(plan.getBasePath(), plan.getPlanName()));
+        List<ScannedStep> scanned = scanner.scan(releaseDir(plan));
         if (scanned.isEmpty()) {
             // 整个 plan 目录不存在 / 无有效步骤 → SKIPPED（RL-8）
             planMapper.markFinished(planId, PlanStatus.SKIPPED.name());
@@ -338,18 +388,29 @@ public class ReleaseOrchestrator {
             log.info("发布计划目录不存在或无 SQL，标记 SKIPPED: planId={}, planName={}", planId, plan.getPlanName());
             return false;
         }
-        Map<Integer, StepConfig> cfgs = indexConfigs(parseStepConfigs(plan.getStepConfig()));
+        // 配置映射：优先按目录名匹配（支持重编 step_no），回退按目录名数字匹配（兼容旧数据）
+        Map<String, StepConfig> byDir = new HashMap<>();
+        Map<Integer, StepConfig> byNo = new HashMap<>();
+        for (StepConfig c : parseStepConfigs(plan.getStepConfig())) {
+            if (hasText(c.dirName())) {
+                byDir.put(c.dirName(), c);
+            } else if (c.stepNo() != null) {
+                byNo.put(c.stepNo(), c);
+            }
+        }
         List<ReleaseStep> steps = new ArrayList<>();
         for (ScannedStep s : scanned) {
-            StepConfig c = cfgs.get(s.no());
+            String dirName = s.dir().getFileName().toString();
+            StepConfig c = byDir.containsKey(dirName) ? byDir.get(dirName) : byNo.get(s.no());
             String connKey = c != null && hasText(c.connKey()) ? c.connKey() : plan.getDefaultConnKey();
             if (!hasText(connKey)) {
                 throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.connRequired", s.no());
             }
             validateConnKey(connKey);
             ReleaseStep step = new ReleaseStep();
+            // 运行编号：配置的 stepNo 优先（SCAN 后可调整），否则使用目录名数字
+            step.setStepNo(c != null && c.stepNo() != null && c.stepNo() >= 1 ? c.stepNo() : s.no());
             step.setPlanId(planId);
-            step.setStepNo(s.no());
             step.setDirPath(s.dir().toAbsolutePath().toString());
             step.setConnKey(connKey);
             step.setAfterMode(c != null && hasText(c.afterMode())
@@ -359,7 +420,15 @@ public class ReleaseOrchestrator {
             step.setScriptHash(ScriptHash.of(s.dir(), properties.getSqlSuffix()));
             steps.add(step);
         }
-        // 启动即校验第一步执行者（后续步骤在 continue/retry 时校验）
+        // 按运行编号排序并校验重复
+        steps.sort(Comparator.comparingInt(ReleaseStep::getStepNo));
+        java.util.Set<Integer> seen = new java.util.HashSet<>();
+        for (ReleaseStep s : steps) {
+            if (!seen.add(s.getStepNo())) {
+                throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.dupStepNo", s.getStepNo());
+            }
+        }
+        // 启动即校验首个执行步骤的执行者（后续步骤在 continue/retry 时校验）
         assertExecutor(steps.get(0), operator);
 
         // 元数据写入保持原子：避免"步骤已落库但计划仍 DRAFT"的中间态
@@ -368,8 +437,9 @@ public class ReleaseOrchestrator {
             planMapper.updateForStart(planId, crNumber, remark, operator, PlanStatus.RUNNING.name());
         });
         publisher.sendPlan(planId, Map.of("planId", planId, "status", PlanStatus.RUNNING.name()));
-        log.info("发布计划启动: planId={}, planName={}, steps={}, operator={}, cr={}",
-                planId, plan.getPlanName(), steps.size(), operator, crNumber);
+        log.info("发布计划启动: planId={}, planName={}, type={}, path={}, steps={}, operator={}, cr={}",
+                planId, plan.getPlanName(), plan.getReleaseType(), plan.getReleasePath(),
+                steps.size(), operator, crNumber);
         return true;
     }
 
@@ -634,6 +704,51 @@ public class ReleaseOrchestrator {
         }
     }
 
+    /** 计划的发布目录：FOLDER 用 release_path；旧数据（无 release_path）回退 base_path/plan_name。 */
+    private Path releaseDir(ReleasePlan plan) {
+        if ("ZIP".equals(plan.getReleaseType())) {
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.zipNotImplemented");
+        }
+        if (hasText(plan.getReleasePath())) {
+            return resolveReleasePath(plan.getReleasePath());
+        }
+        return resolvePlanDir(plan.getBasePath(), plan.getPlanName());
+    }
+
+    /** SCAN / 执行共用的发布目录解析：ZIP 暂未实现；FOLDER 支持绝对路径（share folder）或基于 base-path 的相对路径。 */
+    private Path releaseDir(String releaseType, String releasePath) {
+        if ("ZIP".equals(releaseType == null ? null : releaseType.toUpperCase())) {
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.zipNotImplemented");
+        }
+        if (!hasText(releasePath)) {
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.pathRequired");
+        }
+        return resolveReleasePath(releasePath);
+    }
+
+    /**
+     * 解析发布路径：绝对路径直接使用（支持 share folder）；相对路径基于全局 base-path 解析
+     * 并校验不得逃逸 base（防穿越 §12.4）。
+     */
+    private Path resolveReleasePath(String raw) {
+        if (!hasText(raw)) {
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.pathRequired");
+        }
+        Path p = Paths.get(raw);
+        if (!p.isAbsolute()) {
+            Path base = requireBaseDir();
+            p = base.resolve(p).normalize();
+            if (!p.startsWith(base)) {
+                throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.pathInvalid", raw);
+            }
+        }
+        try {
+            return Files.exists(p) ? p.toRealPath() : p.toAbsolutePath().normalize();
+        } catch (IOException e) {
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.basePathInvalid", raw);
+        }
+    }
+
     private Path resolvePlanDir(String basePath, String planName) {
         if (!PLAN_NAME.matcher(planName).matches()) {
             throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID,
@@ -650,16 +765,6 @@ public class ReleaseOrchestrator {
             throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.pathInvalid", planName);
         }
         return target;
-    }
-
-    private Map<Integer, StepConfig> indexConfigs(List<StepConfig> configs) {
-        Map<Integer, StepConfig> map = new HashMap<>();
-        if (configs != null) {
-            for (StepConfig c : configs) {
-                map.put(c.stepNo(), c);
-            }
-        }
-        return map;
     }
 
     private void publishStep(ReleaseStep step, String status) {

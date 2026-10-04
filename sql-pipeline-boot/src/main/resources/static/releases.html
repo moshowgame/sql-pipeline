@@ -28,7 +28,7 @@
 
 <div class="container">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h5 class="mb-0" data-i18n="rel.title">Release Orchestration</h5>
+        <h5 class="mb-0" data-i18n="rel.title">Release Plan / Runbook</h5>
         <button class="btn btn-primary btn-sm" onclick="openCreate()" data-i18n="rel.create">+ Create Plan</button>
     </div>
 
@@ -92,7 +92,7 @@
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" data-i18n="rel.createModal.title">Create Release Plan</h5>
+                <h5 class="modal-title" id="createModalTitle" data-i18n="rel.createModal.title">Create Release Plan</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -100,27 +100,42 @@
                     <div class="col-md-4">
                         <label class="form-label" data-i18n="rel.createModal.planName">Plan name</label> <span class="text-danger">*</span>
                         <input id="cPlanName" class="form-control form-control-sm mono" data-i18n-placeholder="rel.createModal.planNamePlaceholder">
+                        <div class="form-text" data-i18n="rel.createModal.planNameHint"></div>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
+                        <label class="form-label" data-i18n="rel.createModal.releaseType">Release Type</label>
+                        <select id="cReleaseType" class="form-select form-select-sm" onchange="toggleReleaseType()">
+                            <option value="FOLDER" data-i18n="rel.createModal.typeFolder">FOLDER (directory)</option>
+                            <option value="ZIP" data-i18n="rel.createModal.typeZip">ZIP (not implemented)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-5">
                         <label class="form-label" data-i18n="rel.createModal.defaultConn">Default Connection</label>
                         <select id="cDefaultConn" class="form-select form-select-sm"></select>
                     </div>
-                    <div class="col-md-4 d-flex align-items-end">
-                        <button class="btn btn-outline-info btn-sm" onclick="doScan()" data-i18n="rel.createModal.scan">Scan Directory Preview</button>
+                    <div class="col-12">
+                        <label class="form-label"><span data-i18n="rel.createModal.releasePath">Release Path</span> <span class="text-danger">*</span></label>
+                        <div class="input-group input-group-sm">
+                            <input id="cReleasePath" class="form-control mono" data-i18n-placeholder="rel.createModal.releasePathPlaceholder">
+                            <button class="btn btn-outline-info" id="cScanBtn" onclick="doScan()" data-i18n="rel.createModal.scan">Scan</button>
+                        </div>
+                        <div class="form-text" data-i18n="rel.createModal.releasePathHint"></div>
                     </div>
                 </div>
 
                 <hr>
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <span class="fw-bold" data-i18n="rel.createModal.stepsTitle">Step Configurations</span>
-                    <button class="btn btn-outline-primary btn-sm" onclick="addStepRow()" data-i18n="rel.createModal.addStep">+ Add Step</button>
+                    <button id="cAddStepBtn" class="btn btn-outline-primary btn-sm" onclick="addStepRow()" data-i18n="rel.createModal.addStep">+ Add Step</button>
                 </div>
+                <div class="text-muted small mb-2" data-i18n="rel.createModal.stepsHint"></div>
                 <table class="table table-sm align-middle">
                     <thead class="table-light">
                     <tr>
                         <th style="width:90px" data-i18n="rel.createModal.stepNo">Step No.</th>
+                        <th style="width:110px" data-i18n="rel.createModal.dirName">Directory</th>
                         <th style="width:200px" data-i18n="rel.createModal.conn">Connection</th>
-                        <th style="width:140px">afterMode</th>
+                        <th style="width:130px">afterMode</th>
                         <th data-i18n="rel.steps.col.executor">Executor</th>
                         <th style="width:50px"></th>
                     </tr>

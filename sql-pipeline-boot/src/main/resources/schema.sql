@@ -108,6 +108,8 @@ CREATE TABLE IF NOT EXISTS release_plan (
     id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     plan_name        VARCHAR(128) NOT NULL,
     base_path        VARCHAR(512) NOT NULL,
+    release_type     VARCHAR(16)  NOT NULL DEFAULT 'FOLDER',
+    release_path     VARCHAR(512),
     default_conn_key VARCHAR(64),
     step_config      JSONB,
     status           VARCHAR(24),
@@ -121,8 +123,12 @@ CREATE TABLE IF NOT EXISTS release_plan (
     created_at       TIMESTAMP    NOT NULL DEFAULT now(),
     CONSTRAINT uk_plan_name UNIQUE (plan_name)
 );
-COMMENT ON TABLE  release_plan             IS '发布计划：DRAFT|RUNNING|WAITING|PAUSED|COMPLETED|FAILED|SKIPPED';
-COMMENT ON COLUMN release_plan.step_config IS '各步骤编排配置 [{stepNo,connKey,afterMode,executor}]';
+ALTER TABLE release_plan ADD COLUMN IF NOT EXISTS release_type VARCHAR(16) NOT NULL DEFAULT 'FOLDER';
+ALTER TABLE release_plan ADD COLUMN IF NOT EXISTS release_path VARCHAR(512);
+COMMENT ON TABLE  release_plan               IS '发布计划：DRAFT|RUNNING|WAITING|PAUSED|COMPLETED|FAILED|SKIPPED';
+COMMENT ON COLUMN release_plan.release_type  IS 'FOLDER（release_path 为目录）| ZIP（release_path 为 zip 包，解压暂未实现）';
+COMMENT ON COLUMN release_plan.release_path  IS '计划的发布路径（可指定 share folder 的绝对/相对路径）';
+COMMENT ON COLUMN release_plan.step_config   IS '各步骤编排配置 [{dirName,stepNo,connKey,afterMode,executor}]';
 
 -- 6.2.6 发布步骤
 CREATE TABLE IF NOT EXISTS release_step (

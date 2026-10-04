@@ -11,6 +11,8 @@ public interface ReleasePlanMapper {
 
     int insert(ReleasePlan entity);
 
+    int updateConfig(ReleasePlan entity);
+
     int updateForStart(@Param("id") Long id,
                        @Param("crNumber") String crNumber,
                        @Param("remark") String remark,

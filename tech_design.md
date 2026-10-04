@@ -3,16 +3,17 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | sql-pipeline 技术设计文档（TDD） |
-| 版本 | v1.0 |
-| 状态 | Draft |
-| 最后更新 | 2026-10-03 |
-| 适用范围 | 平台一期（Health Check + Release 编排） |
+| 版本 | v1.1 |
+| 状态 | 已实现（与代码同步，实现状态与设计修订见 §18） |
+| 最后更新 | 2026-10-05 |
+| 适用范围 | 平台一期（Health Check + Release Plan/Runbook + 告警通知） |
 
 ## 修订记录
 
 | 版本 | 日期 | 修订人 | 说明 |
 |---|---|---|---|
 | v1.0 | 2026-10-03 | — | 初稿，覆盖两大核心模块设计 |
+| v1.1 | 2026-10-05 | — | 与实现同步：PostgreSQL 全量化、Release Runbook 重设计（type/path/SCAN/可重编号/编辑查看）、异步驱动 + advisory lock、告警通知模块（xMatters）、i18n、断言与参数模型简化、Pipeline 可视化（详见 §18） |
 
 ---
 
@@ -40,6 +41,7 @@
 15. 部署与配置
 16. 技术风险与决策记录
 17. 附录
+18. 实现修订（v1.1，与代码同步）
 
 ---
 
@@ -1531,6 +1533,90 @@ sql-pipeline-parent
 | AST | Abstract Syntax Tree |
 | DDL | Data Definition Language |
 | DML | Data Manipulation Language |
+
+---
+
+## 18. 实现修订（v1.1，与代码同步）
+
+本章记录 v1.1 实现过程中对前述章节的修订、需求新增与落地状态。**与前文冲突之处以本章为准。**
+
+### 18.1 平台选型修订（§5）
+
+| 项 | v1.0 设计 | v1.1 实现 |
+|---|---|---|
+| 元数据库 / 目标库 | 未限定（示例 MySQL） | **仅 PostgreSQL**（平台库 + 目标库均内置 PG 驱动；DDL 全量 PG 方言：IDENTITY / JSONB / TEXT / COMMENT ON） |
+| 动态 SQL 执行 | 原生 JDBC | 不变（ADR-01 维持） |
+| 密码加密 | AES-256（模式未定） | AES-256-GCM（随机 IV 前置），密钥经 `SQL_PIPELINE_AES_KEY` 注入，缺失启动失败；同时用于告警通道凭据 |
+| SQL 解析 | JSqlParser | 维持；另增自研 `SqlSplitter`（状态机，支持 PG dollar-quote、嵌套块注释） |
+
+### 18.2 数据模型修订（§6）
+
+| 表 | 修订 |
+|---|---|
+| 全部 | DDL 改 PostgreSQL；`db_connection` 增 `default_schema`（Hikari setSchema，支持 share folder 目标库的 schema 指定） |
+| `sql_definition` | `conn_id` → `conn_key`；`params_json` 语义改为 JSON **对象**（`${name}` 命名占位符）；增 `assert_op`、`assert_value`（断言简化，见 18.4），`assert_config` 保留兼容 |
+| `sql_definition_history` | 同步增 `assert_op`/`assert_value`；不设 `(sql_def_id, version)` 唯一键 |
+| `health_check_run` | 不变（result_head 前 20 行 JSON，截断 2000 字符） |
+| `release_plan` | 增 `release_type`（FOLDER / ZIP）、`release_path`（发布路径，支持 share folder 绝对路径）、`default_conn_key`；`step_config` 结构改为 `[{dirName, stepNo, connKey, afterMode, executor}]`（目录名 ↔ 运行编号映射） |
+| `release_step` | `conn_id` → `conn_key`；增 `confirm_by`/`confirm_at`（WAIT 人工确认审计）、`retry_remark`（重试备注）、`script_hash`（脚本变更检测） |
+| `release_sql_log` | 增 `step_no`、`run_seq`、`operator`（冗余列：步骤删除/多轮重跑后日志仍可按计划查询与区分轮次） |
+| **新增** `notify_channel` | 告警通道：type（XMATTERS）、url、auth_type（NONE/BASIC/API_KEY）、secret_enc、events（JSONB 订阅事件数组）、hc_fail_threshold、enabled |
+| **新增** `notify_log` | 推送日志：channel、event、status、response、payload |
+
+### 18.3 Release Runbook 重设计（§7.5）
+
+- **定位更名**：Release Orchestration → **Release Plan / Runbook**。
+- **创建模型**：plan_name 默认 `release_yyyyMMdd`；`release_type = FOLDER / ZIP`（ZIP 解压占位未实现，scan/start 明确提示）；`release_path` 必填（share folder 绝对路径或 base-path 相对路径，防穿越校验）。
+- **SCAN 与可重编号**：SCAN 读取 release_path 下数字子目录（asc，`^[1-9]\d*$`，拒绝 0 与前导零），生成可编辑步骤行；运行编号默认 = 目录名数字，可调整，启动按配置编号排序执行（重复编号拒绝）。
+- **编辑权限**：`PUT /api/releases/{id}` 仅 DRAFT 可编辑（类型/路径/默认连接/步骤配置；planName 锁定）；非 DRAFT 返回 409（error.rl.editOnlyDraft），运行过的计划只能 View（全只读弹窗）。
+- **异步驱动**：HTTP 请求（start/continue/retry/rerun）仅同步完成校验与元数据写入（元数据事务用 `TransactionTemplate` 保证原子），实际驱动提交 `release-driver` 线程池（§10.1 预留项落地），进度经 SSE 推送。
+- **plan 级互斥**：§7.5.5 的 JVM `ReentrantLock` 改为 **PG advisory lock**（`pg_try_advisory_lock`，等待 15s 超时返回 409 RL0008）——崩溃自动释放、支持多实例（ADR-09）。
+- **步骤执行**：维持"一目录一事务"；新增 ① 步骤总超时（`step-total-timeout-sec`，语句间检查）；② 目录含 `_nontransactional` 标记文件时逐条自动提交（用于 `CREATE INDEX CONCURRENTLY` 等非事务 DDL，事务模式下检测到 CONCURRENTLY 直接拒绝并提示）；③ 失败不自动重试，连接失败同样置 FAIL。
+- **审计与恢复**：WAIT continue 记录 confirm_by/at；retry 带可选备注；启动恢复（`ApplicationReadyEvent`）把 RUNNING 步骤置 FAIL（错误信息明确提示"可能已在目标库提交，重试前人工核对"）、RUNNING 计划按步骤状态收敛为 FAILED / WAITING / COMPLETED（补记摘要）。
+- **脚本变更检测**：start 时计算步骤目录 SHA-256 存档，详情接口实时比对返回 `scriptChanged`。
+- **Pipeline 可视化**：前端步骤以事件节点流呈现（横向/纵向切换、分段进度条、`⏸ Manual gate` 卡点标记、节点点击查看运行结果与 SQL 明细），SSE 驱动实时刷新。
+
+### 18.4 健康检查修订（§7.3/7.4）
+
+- **参数绑定**：§7.3 的 `?` 位置绑定改为 **`${name}` 命名占位符** + JSON 对象参数（默认 `{}`，手动执行可按名覆盖）；解析在 SqlGuard 校验之前进行（占位符缺失值在保存/执行时拒绝）。
+- **断言简化**：§7.4.1 的三类断言（VALUE/ROWCOUNT/RECORD + JSON 配置 + expr 表达式）简化为**三要素**：`assertType`（VALUE=第一行第一列 / ROWS=返回行数）+ `assertOp`（`== != > >= < <=`）+ `assertValue`（数值）。非数值实际值判 FAIL；操作符白名单实现不变（ADR-08 维持）。
+
+### 18.5 告警通知模块（新增，§12/13 扩展）
+
+- **通道**（`notify_channel`，存平台库）：xMatters API（POST JSON 至 Inbound Integration / Flow Webhook 触发地址），认证 NONE / BASIC / API_KEY（Header 可配，默认 `apikey`），凭据 AES-256-GCM 加密。
+- **事件**：`HC_FAIL`（连败达到通道阈值触发一次，成功清零计数；阈值=1 即每次失败告警）、`RELEASE_STEP_FAIL`、`PLAN_FAIL`、`RELEASE_STEP_SUCCESS`、`PLAN_COMPLETED`（后两类需显式订阅）。
+- **可靠性**：推送走独立线程池（CallerRunsPolicy，不丢事件）；推送失败不影响业务主流程；每次推送落 `notify_log`（含响应摘要与错误）。
+- **API**：`/api/notify/channels` CRUD + `/{id}/test`（同步 TEST 事件）+ `/logs`。
+
+### 18.6 国际化（新增）
+
+- 前端：`static/js/i18n.js` 集中字典（en 默认 / zh），`data-i18n` 属性渲染，语言偏好 localStorage。
+- 后端：Spring MessageSource（`messages*.properties`），`BizException.i18n(errorCode, key, args...)` 全量替换硬编码消息，`GlobalExceptionHandler` 按 locale 渲染。
+- 语言选择：前端切换写 `LANG` Cookie（后端 `CookieLocaleResolver` 默认 ENGLISH + `?lang=` 参数同步）。
+
+### 18.7 Web 管理界面（新增，文档 v1.0 未覆盖）
+
+jQuery 3.7.1 + Bootstrap 5.2.3（本地化内置，离线可用），五个页面：总览 / 连接管理 / 健康检查 / Release Plan/Runbook（Pipeline 可视化）/ 告警通知；操作者身份经 `X-Operator` 头（localStorage）；统一响应体与错误 toast；TraceId 贯穿。
+
+### 18.8 ADR 增补
+
+| ID | 决策 | 理由 | 替代方案 |
+|---|---|---|---|
+| ADR-09 | plan 级互斥用 PG advisory lock | 崩溃自动释放、多实例可用、无需引入 Redis/ZK | JVM ReentrantLock（v1.0）/ Redis 分布式锁 |
+| ADR-10 | 健康检查参数用 `${name}` 命名占位符 + JSON 对象 | 需求方指定；SQL 可读性优于 `?` 位置绑定 | `?` 位置绑定 |
+| ADR-11 | 断言简化为三要素模型 | 需求方简化；覆盖数值/行数判定的核心场景 | 三类断言 + JSON 配置 |
+| ADR-12 | 告警通道配置存库（notify_channel）+ Sender SPI | 新增通道类型（钉钉/飞书等）零代码侵入路由 | 配置文件静态通道 |
+| ADR-13 | 告警标题/消息经 MessageSource 渲染 | 与平台 i18n 一致；后台线程取系统 locale | 双语硬编码 |
+| ADR-14 | ZIP 类型占位（不实现解压） | 需求方明确"先放着"，接口与数据模型预留 | 直接不出现该类型 |
+
+### 18.9 约束与风险更新（§16.2）
+
+| 项 | v1.0 | v1.1 |
+|---|---|---|
+| 单实例约束 | JVM 锁，强制单实例 | 已解除（advisory lock）；多实例需共享发布目录；健康检查连败计数为实例内各自统计 |
+| 崩溃恢复 | 未设计 | 已实现（§18.3）；残余风险：commit 后崩溃的步骤可能已提交，恢复提示人工核对后重试 |
+| 大目录发布 | 分批提交待定 | 已支持 600+ 文件目录（异步驱动 + 步骤总超时兜底）；`_nontransactional` 提供"逐条提交"逃生舱 |
+| `release_sql_log` 膨胀 | 按月分区 / 归档 | 未实现（待二期） |
 
 ---
 

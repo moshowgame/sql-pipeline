@@ -12,6 +12,7 @@ import com.sqlpipeline.release.scanner.ScannedStepView;
 import com.sqlpipeline.web.dto.ReleaseCreateReq;
 import com.sqlpipeline.web.dto.ReleaseScanReq;
 import com.sqlpipeline.web.dto.ReleaseStartReq;
+import com.sqlpipeline.web.dto.ReleaseUpdateReq;
 import com.sqlpipeline.web.dto.RetryReq;
 import com.sqlpipeline.web.dto.StepConfigReq;
 import com.sqlpipeline.web.util.Operator;
@@ -21,6 +22,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -40,17 +42,27 @@ public class ReleaseController {
     private final ReleaseOrchestrator orchestrator;
     private final ReleaseEventPublisher publisher;
 
-    /** 预览目录结构与步骤配置合并结果（不落库）。 */
+    /** 预览 release path 下的数字子目录（asc），结果作为 release step（不落库）。 */
     @PostMapping("/scan")
     public R<List<ScannedStepView>> scan(@Valid @RequestBody ReleaseScanReq req) {
-        return R.ok(orchestrator.preview(req.planName(), req.defaultConnKey(), toConfigs(req.steps())));
+        return R.ok(orchestrator.preview(req.releaseType(), req.releasePath(),
+                req.defaultConnKey(), List.of()));
     }
 
     @PostMapping
     public R<ReleasePlan> create(@Valid @RequestBody ReleaseCreateReq req,
                                  @RequestHeader(value = Operator.HEADER, required = false) String operator) {
-        return R.ok(orchestrator.create(req.planName(), req.defaultConnKey(), toConfigs(req.steps()),
-                Operator.of(operator)));
+        return R.ok(orchestrator.create(req.planName(), req.releaseType(), req.releasePath(),
+                req.defaultConnKey(), toConfigs(req.steps()), Operator.of(operator)));
+    }
+
+    /** 编辑计划（仅 DRAFT）：更新 Release 类型/路径/默认连接/步骤配置。 */
+    @PutMapping("/{id}")
+    public R<Void> update(@PathVariable Long id, @RequestBody ReleaseUpdateReq req,
+                          @RequestHeader(value = Operator.HEADER, required = false) String operator) {
+        orchestrator.update(id, req.releaseType(), req.releasePath(),
+                req.defaultConnKey(), toConfigs(req.steps()), Operator.of(operator));
+        return R.ok();
     }
 
     @GetMapping

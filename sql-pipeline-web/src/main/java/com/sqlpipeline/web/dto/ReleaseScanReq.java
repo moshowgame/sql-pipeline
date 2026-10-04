@@ -2,11 +2,9 @@ package com.sqlpipeline.web.dto;
 
 import jakarta.validation.constraints.NotBlank;
 
-import java.util.List;
-
-/** 目录结构预览请求。 */
+/** 目录结构扫描请求：按 release path 扫描数字子目录（asc）。 */
 public record ReleaseScanReq(
-        @NotBlank String planName,
-        String defaultConnKey,
-        List<StepConfigReq> steps) {
+        String releaseType,
+        @NotBlank String releasePath,
+        String defaultConnKey) {
 }

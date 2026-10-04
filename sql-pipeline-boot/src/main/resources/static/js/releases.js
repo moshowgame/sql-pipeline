@@ -36,7 +36,13 @@ function renderPlans() {
             '<td class="mono">' + App.fmtTime(p.startedAt) + '</td>' +
             '<td class="mono">' + App.fmtTime(p.finishedAt) + '</td>' +
             '<td class="mono">' + (p.rerunCount || 0) + '</td>' +
-            '<td><button class="btn btn-outline-primary btn-sm" onclick="event.stopPropagation();loadDetail(' + p.id + ')">' + I18N.t('rel.details') + '</button></td>' +
+            '<td><div class="btn-group btn-group-sm" role="group">' +
+            '<button class="btn btn-outline-primary btn-sm" onclick="event.stopPropagation();loadDetail(' + p.id + ')">' + I18N.t('rel.details') + '</button>' +
+            '<button class="btn btn-outline-info btn-sm" onclick="event.stopPropagation();viewPlan(' + p.id + ')">' + I18N.t('rel.view') + '</button>' +
+            (p.status === 'DRAFT'
+                ? '<button class="btn btn-outline-warning btn-sm" onclick="event.stopPropagation();editPlan(' + p.id + ')">' + I18N.t('rel.edit') + '</button>'
+                : '') +
+            '</div></td>' +
             '</tr>';
     });
     $('#planTable').html(rows.join(''));
@@ -67,7 +73,8 @@ function renderDetail(detail, keepScroll) {
         infoCell(I18N.t('rel.info.remark'), p.remark || '-'),
         infoCell(I18N.t('rel.info.operator'), p.operator || '-'),
         infoCell(I18N.t('rel.info.defaultConn'), p.defaultConnKey || '-'),
-        infoCell(I18N.t('rel.info.dir'), (p.basePath || '') + '/' + p.planName),
+        infoCell(I18N.t('rel.createModal.releaseType'), p.releaseType || 'FOLDER'),
+        infoCell(I18N.t('rel.createModal.releasePath'), p.releasePath || '-'),
         infoCell(I18N.t('rel.info.rerunCount'), String(p.rerunCount || 0))
     ].join(''));
 
@@ -222,7 +229,10 @@ function openStepResult(stepNo) {
     $('#stepResultBody').html(html);
     new bootstrap.Modal('#stepResultModal').show();
     App.api('GET', '/api/releases/' + currentPlanId + '/logs?stepNo=' + stepNo).then(function (logs) {
-        const lrows = (logs || []).map(function (l) {
+        const all = logs || [];
+        const cap = 100;
+        const shown = all.slice(0, cap);
+        const lrows = shown.map(function (l) {
             return '<tr>' +
                 '<td class="mono">' + l.seq + '</td>' +
                 '<td class="mono sql-cell" style="max-width:130px">' + App.escapeHtml(l.fileName) + '</td>' +
@@ -238,7 +248,8 @@ function openStepResult(stepNo) {
             '<th data-i18n="common.error">Error</th></tr></thead><tbody>' +
             (lrows.length ? lrows.join('') :
                 '<tr><td colspan="6" class="text-center text-muted py-2">' + App.escapeHtml(I18N.t('rel.logsModal.empty')) + '</td></tr>') +
-            '</tbody></table>');
+            '</tbody></table>' +
+            (all.length > cap ? '<div class="text-muted small mt-1">' + App.escapeHtml(I18N.t('rel.pl.logsCapped', { n: cap, total: all.length })) + '</div>' : ''));
     });
 }
 
@@ -297,18 +308,102 @@ function connSelectOptions(selected) {
         App.escapeHtml(c.connKey + '（' + c.displayName + '）') + '</option>').join('');
 }
 
+// ---------- 创建 / 编辑 / 查看 弹窗 ----------
+
+let modalMode = 'create'; // create | edit | view
+let currentEditId = null;
+
 function openCreate() {
+    modalMode = 'create';
+    currentEditId = null;
+    $('#cAddStepBtn').prop('disabled', false);
     $('#createModal input, #createModal select').not('#cDefaultConn').val('');
+    // plan_name 默认 release_yyyyMMdd（今天）
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    $('#cPlanName').val('release_' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()));
+    $('#cReleaseType').val('FOLDER');
+    $('#cReleasePath').val('');
     $('#scanPreview').empty();
     $('#stepConfigRows').empty();
     $('#cDefaultConn').html(connSelectOptions());
     addStepRow();
+    toggleReleaseType();
+    $('#cPlanName').prop('disabled', false);
+    $('#createModal .btn-primary').show();
+    $('#createModalTitle').text(I18N.t('rel.createModal.title'));
     new bootstrap.Modal('#createModal').show();
 }
 
-function addStepRow(no, connKey, afterMode, executor) {
+/** 编辑（仅 DRAFT）：更新 Release 类型/路径/默认连接/步骤配置；planName 锁定。 */
+function editPlan(id) {
+    const p = plans.find(x => x.id === id);
+    if (!p) return;
+    if (p.status !== 'DRAFT') {
+        App.toast(I18N.t('rel.toast.editOnlyDraft'), 'warning');
+        return;
+    }
+    modalMode = 'edit';
+    currentEditId = id;
+    $('#cAddStepBtn').prop('disabled', false);
+    $('#scanPreview').empty();
+    $('#stepConfigRows').empty();
+    $('#cPlanName').val(p.planName).prop('disabled', true);
+    $('#cReleaseType').val(p.releaseType || 'FOLDER');
+    $('#cReleasePath').val(p.releasePath || '');
+    $('#cDefaultConn').html(connSelectOptions(p.defaultConnKey));
+    let cfgs = [];
+    try { cfgs = JSON.parse(p.stepConfig || '[]') || []; } catch (e) { /* ignore */ }
+    cfgs.forEach(c => addStepRow(c.stepNo, c.connKey, c.afterMode, c.executor, c.dirName));
+    if (!cfgs.length) addStepRow();
+    toggleReleaseType();
+    $('#createModal .btn-primary').show();
+    $('#createModalTitle').text(I18N.t('rel.editModal.title', { id: id }));
+    new bootstrap.Modal('#createModal').show();
+}
+
+/** 查看（任何状态只读）。 */
+function viewPlan(id) {
+    const p = plans.find(x => x.id === id);
+    if (!p) return;
+    modalMode = 'view';
+    $('#scanPreview').empty();
+    $('#stepConfigRows').empty();
+    $('#cPlanName').val(p.planName).prop('disabled', true);
+    $('#cReleaseType').val(p.releaseType || 'FOLDER');
+    $('#cReleasePath').val(p.releasePath || '');
+    $('#cDefaultConn').html(connSelectOptions(p.defaultConnKey));
+    let cfgs = [];
+    try { cfgs = JSON.parse(p.stepConfig || '[]') || []; } catch (e) { /* ignore */ }
+    cfgs.forEach(c => addStepRow(c.stepNo, c.connKey, c.afterMode, c.executor, c.dirName));
+    if (!cfgs.length) addStepRow();
+    toggleReleaseType();
+    $('#cScanBtn').prop('disabled', true);
+    $('#cPlanName, #cReleaseType, #cReleasePath, #cDefaultConn, #cAddStepBtn').prop('disabled', true);
+    $('#stepConfigRows input, #stepConfigRows select').prop('disabled', true);
+    $('#stepConfigRows .btn-outline-danger').hide();
+    $('#createModal .btn-primary').hide();
+    $('#createModalTitle').text(I18N.t('rel.viewModal.title', { id: id }));
+    new bootstrap.Modal('#createModal').show();
+}
+
+function toggleReleaseType() {
+    if (modalMode === 'view') return;
+    const isZip = $('#cReleaseType').val() === 'ZIP';
+    // ZIP 解压功能暂未实现：禁用 SCAN 并提示（计划仍可保存，start 时后端会拒绝）
+    $('#cScanBtn').prop('disabled', isZip);
+    if (isZip) {
+        App.toast(I18N.t('rel.toast.zipNotImplemented'), 'warning');
+    }
+}
+
+function addStepRow(no, connKey, afterMode, executor, dirName) {
+    const dirCell = dirName
+        ? '<span class="mono small">' + App.escapeHtml(dirName) + '</span><input type="hidden" class="sc-dir" value="' + App.escapeHtml(dirName) + '">'
+        : '<span class="text-muted">—</span>';
     const tr = '<tr>' +
         '<td><input class="form-control form-control-sm sc-no" type="number" min="1" max="99" value="' + (no || '') + '"></td>' +
+        '<td>' + dirCell + '</td>' +
         '<td><select class="form-select form-select-sm sc-conn"><option value="">' + App.escapeHtml(I18N.t('rel.createModal.defaultConnOption')) + '</option>' +
         connSelectOptions(connKey) + '</select></td>' +
         '<td><select class="form-select form-select-sm sc-mode">' +
@@ -325,6 +420,7 @@ function collectStepConfigs() {
         const no = parseInt($(this).find('.sc-no').val(), 10);
         if (!no || no < 1) return;
         configs.push({
+            dirName: $(this).find('.sc-dir').val() || null,
             stepNo: no,
             connKey: $(this).find('.sc-conn').val() || null,
             afterMode: $(this).find('.sc-mode').val(),
@@ -335,25 +431,31 @@ function collectStepConfigs() {
 }
 
 function doScan() {
-    const planName = $('#cPlanName').val().trim();
-    if (!planName) { App.toast(I18N.t('rel.toast.planNameRequired'), 'danger'); return; }
-    const body = { planName: planName, defaultConnKey: $('#cDefaultConn').val() || null, steps: collectStepConfigs() };
+    const releasePath = $('#cReleasePath').val().trim();
+    if (!releasePath) { App.toast(I18N.t('rel.toast.pathRequired'), 'danger'); return; }
+    const body = {
+        releaseType: $('#cReleaseType').val(),
+        releasePath: releasePath,
+        defaultConnKey: $('#cDefaultConn').val() || null
+    };
     App.api('POST', '/api/releases/scan', body).then(function (list) {
         if (!list.length) {
+            $('#stepConfigRows').empty();
             $('#scanPreview').html('<div class="alert alert-warning py-2 mb-0">' + App.escapeHtml(I18N.t('rel.scan.empty')) + '</div>');
             return;
         }
-        const rows = list.map(function (s) {
-            return '<tr><td class="fw-bold">' + s.stepNo + '</td>' +
-                '<td class="mono">' + App.escapeHtml(s.connKey || I18N.t('rel.scan.unset')) + '</td>' +
-                '<td>' + App.badge(s.afterMode, s.afterMode === 'WAIT' ? 'warning' : 'info') + '</td>' +
-                '<td>' + (s.executor ? App.escapeHtml(s.executor) : '<span class="text-muted">' + I18N.t('common.unlimited') + '</span>') + '</td>' +
-                '<td class="mono sql-cell" style="max-width:280px">' + s.files.map(App.escapeHtml).join(', ') + '</td></tr>';
+        // 扫描结果生成可编辑步骤行（步骤号默认 = 目录名数字，可调整执行顺序）
+        $('#stepConfigRows').empty();
+        list.forEach(function (s) {
+            addStepRow(s.stepNo, s.connKey, s.afterMode, s.executor, s.dirName);
         });
-        $('#scanPreview').html('<div class="fw-bold mb-1 small">' + App.escapeHtml(I18N.t('rel.scan.title')) + '</div>' +
+        const rows = list.map(function (s) {
+            return '<tr><td class="mono">' + App.escapeHtml(s.dirName) + '</td>' +
+                '<td class="mono">' + I18N.t('rel.scan.fileCount', { n: s.files.length }) + '</td></tr>';
+        });
+        $('#scanPreview').html('<div class="fw-bold mb-1 small">' + App.escapeHtml(I18N.t('rel.scan.filesTitle')) + '</div>' +
             '<table class="table table-sm table-bordered mb-0"><thead class="table-light">' +
-            '<tr><th data-i18n="rel.createModal.stepNo">Step</th><th data-i18n="rel.createModal.conn">Connection</th>' +
-            '<th>afterMode</th><th data-i18n="rel.steps.col.executor">Executor</th>' +
+            '<tr><th data-i18n="rel.createModal.dirName">Directory</th>' +
             '<th data-i18n="rel.scan.col.files">SQL Files</th></tr></thead><tbody>' +
             rows.join('') + '</tbody></table>');
     });
@@ -361,8 +463,27 @@ function doScan() {
 
 function savePlan() {
     const planName = $('#cPlanName').val().trim();
+    const releasePath = $('#cReleasePath').val().trim();
     if (!planName) { App.toast(I18N.t('rel.toast.planNameRequired'), 'danger'); return; }
-    const body = { planName: planName, defaultConnKey: $('#cDefaultConn').val() || null, steps: collectStepConfigs() };
+    if (!releasePath) { App.toast(I18N.t('rel.toast.pathRequired'), 'danger'); return; }
+    const body = {
+        releaseType: $('#cReleaseType').val(),
+        releasePath: releasePath,
+        defaultConnKey: $('#cDefaultConn').val() || null,
+        steps: collectStepConfigs()
+    };
+    if (modalMode === 'edit') {
+        App.api('PUT', '/api/releases/' + currentEditId, body).then(function () {
+            App.toast(I18N.t('rel.toast.updated'));
+            bootstrap.Modal.getInstance($('#createModal')[0]).hide();
+            App.api('GET', '/api/releases').then(function (list) {
+                plans = Array.isArray(list) ? list : [];
+                renderPlans();
+            });
+        });
+        return;
+    }
+    body.planName = planName;
     App.api('POST', '/api/releases', body).then(function (plan) {
         App.toast(I18N.t('rel.toast.planCreated'));
         bootstrap.Modal.getInstance($('#createModal')[0]).hide();

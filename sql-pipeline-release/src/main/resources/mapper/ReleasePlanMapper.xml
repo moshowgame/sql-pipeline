@@ -3,11 +3,23 @@
 <mapper namespace="com.sqlpipeline.release.mapper.ReleasePlanMapper">
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO release_plan (plan_name, base_path, default_conn_key, step_config, status, created_by, created_at)
-        VALUES (#{planName}, #{basePath}, #{defaultConnKey},
+        INSERT INTO release_plan (plan_name, base_path, release_type, release_path, default_conn_key, step_config, status, created_by, created_at)
+        VALUES (#{planName}, #{basePath},
+                CAST(#{releaseType,jdbcType=VARCHAR} AS VARCHAR),
+                CAST(#{releasePath,jdbcType=VARCHAR} AS VARCHAR),
+                #{defaultConnKey},
                 CAST(#{stepConfig,jdbcType=VARCHAR} AS jsonb),
                 #{status}, #{createdBy}, now())
     </insert>
+
+    <update id="updateConfig">
+        UPDATE release_plan
+        SET release_type     = #{releaseType},
+            release_path     = CAST(#{releasePath,jdbcType=VARCHAR} AS VARCHAR),
+            default_conn_key = #{defaultConnKey},
+            step_config      = CAST(#{stepConfig,jdbcType=VARCHAR} AS jsonb)
+        WHERE id = #{id}
+    </update>
 
     <update id="updateForStart">
         UPDATE release_plan
