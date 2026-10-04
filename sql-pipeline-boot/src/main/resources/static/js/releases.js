@@ -76,28 +76,131 @@ function renderDetail(detail) {
     $('#btnContinue').prop('disabled', st !== 'WAITING');
     $('#btnRerun').prop('disabled', st === 'RUNNING');
 
-    const rows = currentSteps.map(function (s) {
-        const actions = [];
-        if (s.status === 'FAIL') actions.push('<button class="btn btn-outline-danger btn-sm" onclick="doRetry(' + s.stepNo + ')">' + I18N.t('rel.steps.retry') + '</button>');
-        if (s.status === 'WAITING_CONTINUE') actions.push('<span class="text-warning fw-bold">' + App.escapeHtml(I18N.t('rel.steps.waiting')) + '</span>');
-        if (s.status === 'RUNNING') actions.push('<span class="text-primary">' + App.escapeHtml(I18N.t('rel.steps.running')) + '</span>');
-        if (!actions.length) actions.push('<span class="text-muted">-</span>');
-        return '<tr>' +
-            '<td class="fw-bold">' + s.stepNo + '</td>' +
-            '<td class="mono sql-cell" title="' + App.escapeHtml(s.dirPath) + '">' + App.escapeHtml(s.dirPath) +
-            (s.scriptChanged ? ' <span class="badge bg-warning" title="' + App.escapeHtml(I18N.t('rel.steps.changed')) + '">⚠ ' + App.escapeHtml(I18N.t('rel.steps.changed')) + '</span>' : '') + '</td>' +
-            '<td class="mono">' + App.escapeHtml(s.connKey || '-') + '</td>' +
-            '<td>' + App.badge(s.afterMode, s.afterMode === 'WAIT' ? 'warning' : 'info') + '</td>' +
-            '<td>' + (s.executor ? App.escapeHtml(s.executor) : '<span class="text-muted">' + I18N.t('common.unlimited') + '</span>') + '</td>' +
-            '<td>' + App.stepBadge(s.status) +
-            (s.confirmBy ? '<div class="text-muted small" style="font-weight:400">✓ ' + App.escapeHtml(I18N.t('rel.steps.confirmedBy', { name: s.confirmBy })) + ' ' + App.fmtTime(s.confirmAt) + '</div>' : '') + '</td>' +
-            '<td class="mono">' + (s.retryCount || 0) + '</td>' +
-            '<td class="mono">' + App.fmtMs(s.durationMs) + '</td>' +
-            '<td class="sql-cell" style="max-width:200px" title="' + App.escapeHtml(s.errorMsg || '') + '">' + App.escapeHtml(s.errorMsg || '-') + '</td>' +
-            '<td>' + actions.join(' ') + '</td></tr>';
+    renderPipeline();
+}
+
+// ---------- Pipeline 可视化 ----------
+
+const PL_STATUS_COLORS = {
+    PENDING: '#9ca3af', RUNNING: '#4f46e5', SUCCESS: '#16a34a',
+    FAIL: '#dc2626', WAITING_CONTINUE: '#d97706', SKIPPED: '#6b7280'
+};
+
+function currentOrientation() {
+    return localStorage.getItem('pipelineOrient') || 'horizontal';
+}
+
+function setOrientation(o) {
+    localStorage.setItem('pipelineOrient', o);
+    renderPipeline();
+}
+
+function renderPipeline() {
+    const orient = currentOrientation();
+    $('#orientGroup .btn').each(function () {
+        const active = $(this).data('orient') === orient;
+        $(this).toggleClass('btn-primary active', active).toggleClass('btn-outline-primary', !active);
     });
-    $('#stepTable').html(rows.length ? rows.join('') :
-        '<tr><td colspan="10" class="text-center text-muted py-3">' + App.escapeHtml(I18N.t('rel.steps.none')) + '</td></tr>');
+    $('#plLegend').html(Object.keys(PL_STATUS_COLORS).map(function (st) {
+        return '<span class="pl-lg-dot" style="background:' + PL_STATUS_COLORS[st] + '"></span>' + st;
+    }).join(''));
+
+    const $pl = $('#pipeline').removeClass('horizontal vertical').addClass(orient);
+    if (!currentSteps.length) {
+        $pl.html('<div class="text-muted small py-3">' + App.escapeHtml(I18N.t('rel.steps.none')) + '</div>');
+        return;
+    }
+    const arrow = orient === 'vertical' ? '▼' : '▶';
+    const html = [];
+    let prev = null;
+    currentSteps.forEach(function (s) {
+        if (prev) {
+            html.push(connHtml(prev.afterMode, arrow));
+        }
+        html.push(nodeHtml(s));
+        prev = s;
+    });
+    $pl.html(html.join(''));
+}
+
+function nodeHtml(s) {
+    const meta = [App.fmtMs(s.durationMs), '↻ ' + (s.retryCount || 0)];
+    if (s.executor) {
+        meta.push('👤 ' + App.escapeHtml(s.executor));
+    }
+    if (s.confirmBy) {
+        meta.push('✓ ' + App.escapeHtml(s.confirmBy));
+    }
+    if (s.scriptChanged) {
+        meta.push('<span class="text-warning fw-bold">⚠ ' + App.escapeHtml(I18N.t('rel.steps.changed')) + '</span>');
+    }
+    return '<div class="pl-node pl-st-' + s.status + '" onclick="openStepResult(' + s.stepNo + ')" title="' + App.escapeHtml(s.dirPath) + '">' +
+        '<div class="pl-head"><span class="pl-num">' + s.stepNo + '</span><span class="pl-status">' + App.stepBadge(s.status) + '</span></div>' +
+        '<div class="pl-meta">' + meta.join(' · ') + '</div>' +
+        (s.errorMsg ? '<div class="pl-err" title="' + App.escapeHtml(s.errorMsg) + '">' + App.escapeHtml(s.errorMsg) + '</div>' : '') +
+        '</div>';
+}
+
+/** 连接器：上一步 afterMode=WAIT 时显示人工卡点标记，否则普通箭头。 */
+function connHtml(afterMode, arrow) {
+    const wait = afterMode === 'WAIT';
+    return '<div class="pl-conn">' +
+        '<div class="pl-line"></div>' +
+        (wait
+            ? '<div class="pl-gate">⏸ ' + App.escapeHtml(I18N.t('rel.pl.waitGate')) + '</div><div class="pl-line"></div>'
+            : '<div class="pl-arrow">' + arrow + '</div>') +
+        '</div>';
+}
+
+/** 节点点击：展示该步骤运行结果与 SQL 明细。 */
+function openStepResult(stepNo) {
+    const s = currentSteps.find(x => x.stepNo === stepNo);
+    if (!s) return;
+    $('#stepResultTitle').text(I18N.t('rel.pl.stepResult', { no: stepNo }));
+    const rows = [
+        [I18N.t('rel.col.status'), App.stepBadge(s.status)],
+        [I18N.t('rel.info.defaultConn'), App.escapeHtml(s.connKey || '-')],
+        ['afterMode', App.badge(s.afterMode, s.afterMode === 'WAIT' ? 'warning' : 'info')],
+        [I18N.t('rel.steps.col.executor'), s.executor ? App.escapeHtml(s.executor) : I18N.t('common.unlimited')],
+        [I18N.t('common.duration'), App.fmtMs(s.durationMs)],
+        [I18N.t('rel.steps.col.retries'), (s.retryCount || 0) + (s.retryRemark ? '（' + App.escapeHtml(s.retryRemark) + '）' : '')],
+        [I18N.t('common.time'), App.fmtTime(s.startedAt) + ' → ' + App.fmtTime(s.finishedAt)]
+    ];
+    if (s.confirmBy) {
+        rows.push([I18N.t('rel.steps.confirmedBy', { name: s.confirmBy }), App.fmtTime(s.confirmAt)]);
+    }
+    if (s.scriptChanged) {
+        rows.push(['⚠', I18N.t('rel.steps.changed')]);
+    }
+    let html = '<div class="row g-2 mb-2">' + rows.map(function (r) {
+        return '<div class="col-md-3 col-6"><div class="text-muted small">' + r[0] + '</div><div class="small">' + r[1] + '</div></div>';
+    }).join('') + '</div>';
+    if (s.errorMsg) {
+        html += '<div class="alert alert-danger py-2 sql-text">' + App.escapeHtml(s.errorMsg) + '</div>';
+    }
+    html += '<div class="fw-bold small mb-1 mt-2">' + I18N.t('rel.pl.logs') + '</div>' +
+        '<div id="stepLogsBody"><span class="text-muted small">' + App.escapeHtml(I18N.t('common.loading')) + '</span></div>';
+    $('#stepResultBody').html(html);
+    new bootstrap.Modal('#stepResultModal').show();
+    App.api('GET', '/api/releases/' + currentPlanId + '/logs?stepNo=' + stepNo).then(function (logs) {
+        const lrows = (logs || []).map(function (l) {
+            return '<tr>' +
+                '<td class="mono">' + l.seq + '</td>' +
+                '<td class="mono sql-cell" style="max-width:130px">' + App.escapeHtml(l.fileName) + '</td>' +
+                '<td class="sql-text" style="max-width:300px">' + App.escapeHtml(l.sqlPreview) + '</td>' +
+                '<td>' + (l.status === 'SUCCESS' ? App.badge('SUCCESS', 'success') : App.badge('FAIL', 'danger')) + '</td>' +
+                '<td class="mono">' + App.fmtMs(l.durationMs) + '</td>' +
+                '<td class="sql-cell" style="max-width:140px" title="' + App.escapeHtml(l.errorMsg || '') + '">' + App.escapeHtml(l.errorMsg || '-') + '</td></tr>';
+        });
+        $('#stepLogsBody').html(
+            '<table class="table table-sm table-bordered pl-mini-table mb-0"><thead class="table-light"><tr>' +
+            '<th>#</th><th data-i18n="rel.logs.col.file">File</th><th>SQL</th>' +
+            '<th data-i18n="rel.logs.col.status">Status</th><th data-i18n="common.duration">Duration</th>' +
+            '<th data-i18n="common.error">Error</th></tr></thead><tbody>' +
+            (lrows.length ? lrows.join('') :
+                '<tr><td colspan="6" class="text-center text-muted py-2">' + App.escapeHtml(I18N.t('rel.logsModal.empty')) + '</td></tr>') +
+            '</tbody></table>');
+    });
 }
 
 function infoCell(label, value) {

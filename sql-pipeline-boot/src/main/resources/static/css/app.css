@@ -272,3 +272,91 @@ h5 { font-weight: 700; letter-spacing: -.01em; }
 ::-webkit-scrollbar-thumb:hover { background-color: #9ca3af; }
 
 pre.bg-light { background: #f8f9fb !important; border: 1px solid var(--sp-border); border-radius: 10px !important; }
+
+/* ---------------- 发布 Pipeline 可视化 ---------------- */
+
+.pipeline { display: flex; padding: .5rem .1rem .2rem; }
+
+.pipeline.horizontal { flex-direction: row; align-items: center; overflow-x: auto; padding-bottom: .6rem; }
+
+.pipeline.vertical { flex-direction: column; align-items: stretch; }
+
+.pl-node {
+    border: 1px solid var(--sp-border);
+    border-top-width: 3px;
+    border-radius: 12px;
+    background: #fff;
+    padding: .55rem .7rem;
+    min-width: 132px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: transform .15s ease, box-shadow .15s ease;
+}
+
+.pipeline.vertical .pl-node { min-width: 0; width: 100%; }
+
+.pl-node:hover { transform: translateY(-2px); box-shadow: var(--sp-shadow-hover); }
+
+.pl-st-PENDING          { border-top-color: #9ca3af; }
+.pl-st-RUNNING          { border-top-color: var(--sp-primary); animation: plPulse 1.2s ease-in-out infinite; }
+.pl-st-SUCCESS          { border-top-color: #16a34a; background: linear-gradient(180deg, #f2fdf5, #fff 55%); }
+.pl-st-FAIL             { border-top-color: #dc2626; background: linear-gradient(180deg, #fef3f3, #fff 55%); }
+.pl-st-WAITING_CONTINUE { border-top-color: #d97706; background: linear-gradient(180deg, #fffaf0, #fff 55%); }
+.pl-st-SKIPPED          { border-top-color: #6b7280; opacity: .72; }
+
+@keyframes plPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(79, 70, 229, .22); }
+    50%      { box-shadow: 0 0 0 7px rgba(79, 70, 229, 0); }
+}
+
+.pl-head { display: flex; align-items: center; gap: .45rem; margin-bottom: .25rem; }
+
+.pl-num {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: .78rem; color: #fff;
+    background: #9ca3af; flex-shrink: 0;
+}
+
+.pl-st-SUCCESS .pl-num { background: #16a34a; }
+.pl-st-FAIL .pl-num { background: #dc2626; }
+.pl-st-RUNNING .pl-num { background: var(--sp-primary); }
+.pl-st-WAITING_CONTINUE .pl-num { background: #d97706; }
+.pl-st-SKIPPED .pl-num { background: #6b7280; }
+
+.pl-status { font-size: .72rem; font-weight: 600; }
+
+.pl-meta { font-size: .72rem; color: var(--sp-text-secondary); line-height: 1.4; }
+
+.pl-err {
+    font-size: .7rem; color: #b91c1c;
+    max-width: 150px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.pl-conn {
+    display: flex; align-items: center; justify-content: center;
+    min-width: 58px; flex-shrink: 0;
+    color: #b6bdc9;
+}
+
+.pl-conn .pl-line { flex: 0 0 auto; width: 26px; height: 2px; background: #c7cdd6; }
+
+.pl-conn .pl-arrow { font-size: .72rem; line-height: 1; padding: 0 2px; }
+
+.pl-conn .pl-gate {
+    font-size: .66rem; color: #b45309;
+    background: #fef3c7; border: 1px dashed #d97706;
+    padding: .1rem .4rem; border-radius: 999px;
+    white-space: nowrap; margin: 0 2px;
+}
+
+.pipeline.vertical .pl-conn { flex-direction: column; min-width: 0; min-height: 42px; width: 100%; }
+
+.pipeline.vertical .pl-conn .pl-line { width: 2px; height: 14px; }
+
+.pl-lg-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin: 0 4px 0 10px; vertical-align: middle; }
+
+.pl-mini-table { font-size: .74rem; }
+.pl-mini-table th { font-size: .68rem; }

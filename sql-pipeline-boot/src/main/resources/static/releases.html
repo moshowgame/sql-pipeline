@@ -71,23 +71,16 @@
         </div>
         <div class="card-body">
             <div class="row g-2 mb-3" id="planInfo"></div>
-            <table class="table table-sm table-hover align-middle mb-0">
-                <thead class="table-light">
-                <tr>
-                    <th data-i18n="rel.steps.col.step">Step</th>
-                    <th data-i18n="rel.steps.col.dir">Directory</th>
-                    <th data-i18n="rel.steps.col.conn">Connection</th>
-                    <th>afterMode</th>
-                    <th data-i18n="rel.steps.col.executor">Executor</th>
-                    <th data-i18n="rel.col.status">Status</th>
-                    <th data-i18n="rel.steps.col.retries">Retries</th>
-                    <th data-i18n="common.duration">Duration</th>
-                    <th data-i18n="common.error">Error</th>
-                    <th style="min-width:110px" data-i18n="common.actions">Actions</th>
-                </tr>
-                </thead>
-                <tbody id="stepTable"></tbody>
-            </table>
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="btn-group btn-group-sm" role="group" id="orientGroup">
+                    <button type="button" class="btn btn-outline-primary active" data-orient="horizontal" onclick="setOrientation('horizontal')" data-i18n="rel.pl.horizontal">Horizontal</button>
+                    <button type="button" class="btn btn-outline-primary" data-orient="vertical" onclick="setOrientation('vertical')" data-i18n="rel.pl.vertical">Vertical</button>
+                </div>
+                <div class="small text-muted" id="plLegend"></div>
+            </div>
+            <div id="pipeline" class="pipeline horizontal">
+                <div class="text-muted small py-3" data-i18n="common.loading">Loading…</div>
+            </div>
         </div>
     </div>
 </div>
@@ -229,6 +222,19 @@
                     <tbody id="summaryTable"></tbody>
                 </table>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- 步骤运行结果 -->
+<div class="modal fade" id="stepResultModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="stepResultTitle"></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="stepResultBody"></div>
         </div>
     </div>
 </div>
