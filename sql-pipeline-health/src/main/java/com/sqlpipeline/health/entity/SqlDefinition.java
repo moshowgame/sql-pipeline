@@ -23,6 +23,10 @@ public class SqlDefinition {
     private BigDecimal assertValue;
     /** 兼容保留：旧版 JSON 断言配置，新数据不再写入。 */
     private String assertConfig;
+    /** 绑定的告警通道（notify_channel.id）：HC_FAIL 只推送到该通道，空=不告警。 */
+    private Long notifyChannelId;
+    /** 列表回填：通道名称（不落库）。 */
+    private String notifyChannelName;
     private String cronExpr;
     private Integer timeoutSec;
     private Integer enabled;

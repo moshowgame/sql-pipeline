@@ -53,8 +53,13 @@ public class AlertService {
     // ---------- 业务钩子（参数保持简单类型，notify 模块不依赖业务模块） ----------
 
     /** 健康检查执行完成：FAIL/ERROR/TIMEOUT 计入连续失败，SUCCESS 清零；达到通道阈值时告警。 */
+    /**
+     * 健康检查执行完成：HC_FAIL 路由到该检查绑定的告警通道（未绑定=不告警），
+     * 连败达到通道阈值触发一次（成功清零计数）；SUCCESS 清零。
+     */
     public void onHealthCheckFinished(Long defId, String defName, String connKey, String status,
-                                      Long runId, Long durationMs, String errorMsg, String assertMsg) {
+                                      Long runId, Long durationMs, String errorMsg, String assertMsg,
+                                      Long notifyChannelId) {
         try {
             if (RunStatuses.SUCCESS.equals(status)) {
                 hcFailStreak.remove(defId);
@@ -64,6 +69,20 @@ public class AlertService {
                 return;
             }
             int streak = hcFailStreak.merge(defId, 1, Integer::sum);
+            if (notifyChannelId == null) {
+                log.debug("健康检查失败但未绑定告警通道，跳过推送: defId={}, streak={}", defId, streak);
+                return;
+            }
+            NotifyChannel channel = channelMapper.selectById(notifyChannelId);
+            if (channel == null || channel.getEnabled() == null || channel.getEnabled() != 1) {
+                log.warn("绑定的告警通道不存在或已停用，跳过推送: defId={}, channelId={}", defId, notifyChannelId);
+                return;
+            }
+            // 连败阈值语义：连续失败次数恰好达到通道阈值时告警一次；阈值 1 = 每次失败即告警
+            Integer threshold = channel.getHcFailThreshold();
+            if (threshold != null && threshold > 1 && threshold != streak) {
+                return;
+            }
             Map<String, Object> props = new LinkedHashMap<>();
             props.put("defId", defId);
             props.put("defName", defName);
@@ -78,12 +97,10 @@ public class AlertService {
             if (hasText(assertMsg)) {
                 props.put("assertMsg", assertMsg);
             }
-            dispatch(AlertEvents.HC_FAIL, "WARN",
-                    msg("notify.alert.hcFail", streak, defName),
-                    buildFailMessage(status, errorMsg, assertMsg), props,
-                    // 阈值语义：连续失败次数恰好达到通道阈值时告警一次；阈值 1 = 每次失败即告警
-                    ch -> ch.getHcFailThreshold() == null || ch.getHcFailThreshold() <= 1
-                            || ch.getHcFailThreshold() == streak);
+            // 只推送到该检查绑定的通道（绕过事件订阅广播）
+            String title = msg("notify.alert.hcFail", streak, defName);
+            String message = buildFailMessage(status, errorMsg, assertMsg);
+            pushToChannel(channel, AlertEvents.HC_FAIL, "WARN", title, message, props);
         } catch (Exception e) {
             log.error("健康检查告警处理失败: defId={}", defId, e);
         }
@@ -210,11 +227,25 @@ public class AlertService {
             if (!subscribes(channel, event) || !extraFilter.test(channel)) {
                 continue;
             }
-            try {
-                alertExecutor.execute(() -> doSend(channel, event, title, payloadJson));
-            } catch (Exception e) {
-                log.error("告警任务提交失败: channel={}", channel.getName(), e);
-            }
+            submitPush(channel, event, title, payloadJson);
+        }
+    }
+
+    /** 定向推送：提交到异步线程池并落 notify_log（HC_FAIL 按绑定的频道路由用）。 */
+    private void pushToChannel(NotifyChannel channel, String event, String severity,
+                               String title, String message, Map<String, Object> props) {
+        if (!properties.isEnabled()) {
+            return;
+        }
+        Map<String, Object> payload = buildPayload(event, severity, title, message, props);
+        submitPush(channel, event, title, JsonUtils.toJson(payload));
+    }
+
+    private void submitPush(NotifyChannel channel, String event, String title, String payloadJson) {
+        try {
+            alertExecutor.execute(() -> doSend(channel, event, title, payloadJson));
+        } catch (Exception e) {
+            log.error("告警任务提交失败: channel={}", channel.getName(), e);
         }
     }
 

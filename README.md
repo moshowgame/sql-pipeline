@@ -276,8 +276,10 @@ curl -N localhost:8080/api/releases/1/stream          # SSE 实时进度（step 
 
 ### 告警通知 `/api/notify`
 
+告警本质上服务于**健康检查**：每个健康检查绑定**一个** xMatters 通道（`notifyChannelId`），失败时（HC_FAIL）只推送到该通道——不同类型的检查可绑定不同团队/业务的通道，未绑定则不告警。Release 相关事件（RELEASE_STEP_FAIL / PLAN_FAIL 等）仍按通道的事件订阅广播。
+
 ```bash
-# 创建 xMatters 通道：订阅事件 + 健康检查连败阈值（1 = 每次失败即告警）
+# 创建 xMatters 通道：健康检查连败阈值（1 = 每次失败即告警）
 curl -s -X POST localhost:8080/api/notify/channels -H 'Content-Type: application/json' -H 'X-Operator: admin' -d '{
   "name": "xmatters-prod", "type": "XMATTERS",
   "url": "https://yourco.xmatters.com/api/integration/1/functions/{id}/trigger",
@@ -287,11 +289,17 @@ curl -s -X POST localhost:8080/api/notify/channels -H 'Content-Type: application
   "hcFailThreshold": 2, "enabled": 1
 }'
 
+# 创建健康检查时绑定通道（notifyChannelId）；健康检查列表 Alerts 列显示通道名，未绑定显示 NO
+curl -s -X POST localhost:8080/api/health-checks -H 'Content-Type: application/json' -d '{
+  "name": "订单库巡检", "connKey": "bizdb", "sqlText": "SELECT 1",
+  "notifyChannelId": 2
+}'
+
 curl -s -X POST localhost:8080/api/notify/channels/1/test  # 同步发送 TEST 事件（返回推送结果）
 curl -s 'localhost:8080/api/notify/logs?limit=50'          # 推送日志（新→旧）
 ```
 
-可订阅事件：`HC_FAIL`（健康检查失败，连败达到阈值触发一次，成功清零计数）、`RELEASE_STEP_FAIL`、`PLAN_FAIL`、`RELEASE_STEP_SUCCESS`、`PLAN_COMPLETED`。payload 为 JSON（source/event/severity/title/message/timestamp + 业务字段），xMatters Flow 按需取用。
+可订阅事件（通道维度，用于 Release 事件广播）：`HC_FAIL`（同时受检查绑定约束）、`RELEASE_STEP_FAIL`、`PLAN_FAIL`、`RELEASE_STEP_SUCCESS`、`PLAN_COMPLETED`。payload 为 JSON（source/event/severity/title/message/timestamp + 业务字段），xMatters Flow 按需取用。
 
 ### 状态机
 

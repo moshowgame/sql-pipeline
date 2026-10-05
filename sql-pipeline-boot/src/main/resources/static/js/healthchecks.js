@@ -1,5 +1,6 @@
 let definitions = [];
 let connections = [];
+let notifyChannels = [];
 let runsState = { defId: null, page: 1, size: 10, total: 0 };
 
 /** 常用 Cron 示例（Spring 6 段：秒 分 时 日 月 周），点击应用到输入框。 */
@@ -31,16 +32,29 @@ function applyCronSample(expr) {
 $(function () {
     App.bindOperator();
     renderCronSamples();
+    App.api('GET', '/api/notify/channels').then(function (chs) {
+        notifyChannels = Array.isArray(chs) ? chs.filter(c => c.enabled === 1) : [];
+    }).fail(function () { notifyChannels = []; });
     $.when(App.api('GET', '/api/health-checks'), App.api('GET', '/api/connections'))
         .done(function (defs, conns) {
             // App.api 的 Promise 已解包为 data 本体（数组），无需再取 [0]
             definitions = Array.isArray(defs) ? defs : [];
             connections = Array.isArray(conns) ? conns : [];
             render();
+            fillNotifyChannelOptions();
         }).fail(function () {
-            $('#defTable').html('<tr><td colspan="10" class="text-center text-muted py-4">' + App.escapeHtml(I18N.t('common.loadFailed')) + '</td></tr>');
+            $('#defTable').html('<tr><td colspan="11" class="text-center text-muted py-4">' + App.escapeHtml(I18N.t('common.loadFailed')) + '</td></tr>');
         });
 });
+
+/** 弹窗内的告警频道单选下拉（无绑定 = 不告警）。 */
+function fillNotifyChannelOptions(selectedId) {
+    const opts = ['<option value=""' + (!selectedId ? ' selected' : '') + '>' + App.escapeHtml(I18N.t('hc.notifyChannel.none')) + '</option>']
+        .concat(notifyChannels.map(c =>
+            '<option value="' + c.id + '"' + (c.id === selectedId ? ' selected' : '') + '>' +
+            App.escapeHtml(c.name + (c.type ? ' (' + c.type + ')' : '')) + '</option>'));
+    $('#dNotifyChannel').html(opts.join(''));
+}
 
 function render() {
     if (!definitions.length) {
@@ -52,12 +66,16 @@ function render() {
         const assertText = d.assertType
             ? App.badge(d.assertType + ' ' + d.assertOp + ' ' + d.assertValue, 'info')
             : '<span class="text-muted">-</span>';
+        const alertsText = d.notifyChannelId
+            ? App.badge(d.notifyChannelName || ('#' + d.notifyChannelId), 'info')
+            : '<span class="text-muted fw-bold">NO</span>';
         return '<tr data-id="' + d.id + '">' +
             '<td>' + d.id + '</td>' +
             '<td class="fw-bold">' + App.escapeHtml(d.name) + '</td>' +
             '<td class="mono">' + App.escapeHtml(d.connKey) + '</td>' +
             '<td class="sql-cell" title="' + App.escapeHtml(d.sqlText) + '">' + App.escapeHtml(d.sqlText) + '</td>' +
             '<td>' + assertText + '</td>' +
+            '<td>' + alertsText + '</td>' +
             '<td class="mono">' + App.escapeHtml(d.cronExpr || '-') + '</td>' +
             '<td class="mono">' + d.timeoutSec + 's</td>' +
             '<td class="mono">v' + d.version + '</td>' +
@@ -90,6 +108,8 @@ function openCreate() {
     $('#dTimeout').val(30); $('#dEnabled').val(1);
     $('#dParams').val('{}');
     $('#dAssertType').val(''); $('#dAssertOp').val('=='); $('#dAssertValue').val('');
+    fillNotifyChannelOptions(null);
+    $('#dCron').val('');
     new bootstrap.Modal('#defModal').show();
 }
 
@@ -105,6 +125,7 @@ function openEdit(id) {
     $('#dAssertType').val(d.assertType || '');
     $('#dAssertOp').val(d.assertOp || '==');
     $('#dAssertValue').val(d.assertValue === null || d.assertValue === undefined ? '' : d.assertValue);
+    fillNotifyChannelOptions(d.notifyChannelId);
     $('#dCron').val(d.cronExpr || '');
     $('#dTimeout').val(d.timeoutSec);
     $('#dEnabled').val(String(d.enabled));
@@ -121,6 +142,7 @@ function saveDef() {
         assertType: $('#dAssertType').val() || null,
         assertOp: $('#dAssertOp').val(),
         assertValue: $('#dAssertValue').val() === '' ? null : parseFloat($('#dAssertValue').val()),
+        notifyChannelId: $('#dNotifyChannel').val() ? parseInt($('#dNotifyChannel').val(), 10) : null,
         cronExpr: $('#dCron').val().trim() || null,
         timeoutSec: parseInt($('#dTimeout').val(), 10),
         enabled: parseInt($('#dEnabled').val(), 10)

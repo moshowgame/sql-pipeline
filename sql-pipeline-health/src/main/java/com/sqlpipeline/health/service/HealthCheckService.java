@@ -23,6 +23,8 @@ import com.sqlpipeline.health.mapper.HealthCheckRunMapper;
 import com.sqlpipeline.health.mapper.SqlDefinitionHistoryMapper;
 import com.sqlpipeline.health.mapper.SqlDefinitionMapper;
 import com.sqlpipeline.health.scheduler.HealthCheckScheduler;
+import com.sqlpipeline.notify.entity.NotifyChannel;
+import com.sqlpipeline.notify.mapper.NotifyChannelMapper;
 import com.sqlpipeline.notify.service.AlertService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.DistributionSummary;
@@ -34,6 +36,7 @@ import org.springframework.scheduling.support.CronTrigger;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -60,6 +63,7 @@ public class HealthCheckService {
     private final AssertEvaluator evaluator;
     private final HealthProperties properties;
     private final AlertService alertService;
+    private final NotifyChannelMapper notifyChannelMapper;
     // 通过 ObjectProvider 延迟获取，打破 scheduler ↔ service 的构造期循环依赖
     private final ObjectProvider<HealthCheckScheduler> schedulerProvider;
     private final ObjectProvider<MeterRegistry> meterRegistry;
@@ -106,11 +110,32 @@ public class HealthCheckService {
     }
 
     public SqlDefinition get(Long id) {
-        return requireExists(id);
+        SqlDefinition def = requireExists(id);
+        fillNotifyChannelNames(List.of(def));
+        return def;
     }
 
     public List<SqlDefinition> list() {
-        return defMapper.selectAll();
+        List<SqlDefinition> defs = defMapper.selectAll();
+        fillNotifyChannelNames(defs);
+        return defs;
+    }
+
+    /** 批量回填绑定的告警通道名（供列表展示：已绑定显示通道名，未绑定显示 NO）。 */
+    private void fillNotifyChannelNames(List<SqlDefinition> defs) {
+        try {
+            Map<Long, String> nameById = new HashMap<>();
+            for (NotifyChannel c : notifyChannelMapper.selectAll()) {
+                nameById.put(c.getId(), c.getName());
+            }
+            for (SqlDefinition def : defs) {
+                if (def.getNotifyChannelId() != null) {
+                    def.setNotifyChannelName(nameById.get(def.getNotifyChannelId()));
+                }
+            }
+        } catch (Exception e) {
+            log.debug("告警通道名称回填失败: {}", e.getMessage());
+        }
     }
 
     // ---------- 执行 ----------
@@ -165,9 +190,10 @@ public class HealthCheckService {
             run.setDurationMs(System.currentTimeMillis() - t0);
             runMapper.updateResult(run);
             recordMetrics(defId, run.getStatus(), run.getDurationMs());
-            // 告警钩子：FAIL/ERROR/TIMEOUT 上报（连续失败计数、通道阈值过滤在 notify 模块内）
+            // 告警钩子：HC_FAIL 路由到检查绑定的通道（未绑定=不告警）
             alertService.onHealthCheckFinished(defId, def.getName(), def.getConnKey(),
-                    run.getStatus(), run.getId(), run.getDurationMs(), run.getErrorMsg(), run.getAssertMsg());
+                    run.getStatus(), run.getId(), run.getDurationMs(),
+                    run.getErrorMsg(), run.getAssertMsg(), def.getNotifyChannelId());
         }
         log.info("健康检查执行完成: defId={}, version={}, status={}, durationMs={}",
                 defId, run.getVersion(), run.getStatus(), run.getDurationMs());
@@ -205,6 +231,12 @@ public class HealthCheckService {
             def.setAssertValue(null);
         }
         def.setAssertConfig(null);
+        // 告警通道绑定校验：通道必须存在
+        if (def.getNotifyChannelId() != null
+                && notifyChannelMapper.selectById(def.getNotifyChannelId()) == null) {
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID,
+                    "error.notify.channelNotFound", def.getNotifyChannelId());
+        }
         if (hasText(def.getCronExpr())) {
             try {
                 new CronTrigger(def.getCronExpr());
