@@ -2,8 +2,35 @@ let definitions = [];
 let connections = [];
 let runsState = { defId: null, page: 1, size: 10, total: 0 };
 
+/** 常用 Cron 示例（Spring 6 段：秒 分 时 日 月 周），点击应用到输入框。 */
+const CRON_SAMPLES = [
+    { key: 'hc.cron.s.everyMinute', expr: '0 * * * * *' },
+    { key: 'hc.cron.s.every5Min', expr: '0 */5 * * * *' },
+    { key: 'hc.cron.s.every15Min', expr: '0 */15 * * * *' },
+    { key: 'hc.cron.s.hourly', expr: '0 0 * * * *' },
+    { key: 'hc.cron.s.daily2am', expr: '0 0 2 * * *' },
+    { key: 'hc.cron.s.daily9am', expr: '0 0 9 * * *' },
+    { key: 'hc.cron.s.workday9am', expr: '0 0 9 * * MON-FRI' },
+    { key: 'hc.cron.s.monday9am', expr: '0 0 9 * * MON' },
+    { key: 'hc.cron.s.monthly1st', expr: '0 30 0 1 * *' },
+    { key: 'hc.cron.s.lastDay23pm', expr: '0 0 23 L * *' }
+];
+
+function renderCronSamples() {
+    const html = CRON_SAMPLES.map(function (s) {
+        return '<button type="button" class="btn btn-outline-secondary btn-sm" title="' + App.escapeHtml(s.expr) + '"' +
+            ' onclick="applyCronSample(\'' + s.expr + '\')">' + App.escapeHtml(I18N.t(s.key)) + '</button>';
+    }).join('');
+    $('#cronSamples').html(html);
+}
+
+function applyCronSample(expr) {
+    $('#dCron').val(expr);
+}
+
 $(function () {
     App.bindOperator();
+    renderCronSamples();
     $.when(App.api('GET', '/api/health-checks'), App.api('GET', '/api/connections'))
         .done(function (defs, conns) {
             // App.api 的 Promise 已解包为 data 本体（数组），无需再取 [0]

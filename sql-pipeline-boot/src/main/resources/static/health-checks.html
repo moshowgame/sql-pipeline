@@ -96,11 +96,7 @@
                         <textarea id="dParams" class="form-control form-control-sm mono" rows="1" data-i18n-placeholder="hc.paramsPlaceholder"></textarea>
                         <div class="form-text" data-i18n="hc.field.paramsHint"></div>
                     </div>
-                    <div class="col-md-3">
-                        <label class="form-label" data-i18n="hc.field.cron">Cron</label>
-                        <input id="dCron" class="form-control form-control-sm mono" data-i18n-placeholder="hc.field.cronPlaceholder">
-                    </div>
-                    <div class="col-md-3">
+                    <div class="col-md-6">
                         <label class="form-label" data-i18n="hc.field.assertType">Assert Type</label>
                         <select id="dAssertType" class="form-select form-select-sm">
                             <option value="" data-i18n="hc.assertNone">No assert</option>
@@ -108,7 +104,7 @@
                             <option value="ROWS" data-i18n="hc.assertRows">Row count</option>
                         </select>
                     </div>
-                    <div class="col-md-2">
+                    <div class="col-md-3">
                         <label class="form-label" data-i18n="hc.field.assertOp">Operator</label>
                         <select id="dAssertOp" class="form-select form-select-sm">
                             <option value="==" data-i18n="hc.op.eq">= equals</option>
@@ -119,9 +115,18 @@
                             <option value="<=" data-i18n="hc.op.lte">&lt;= less or equal</option>
                         </select>
                     </div>
-                    <div class="col-md-2">
+                    <div class="col-md-3">
                         <label class="form-label" data-i18n="hc.field.assertValue">Expected Value</label>
                         <input id="dAssertValue" type="number" step="any" class="form-control form-control-sm" data-i18n-placeholder="hc.field.assertValuePlaceholder">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label" data-i18n="hc.field.cron">Cron</label>
+                        <input id="dCron" class="form-control form-control-sm mono" data-i18n-placeholder="hc.field.cronPlaceholder">
+                        <div class="form-text" data-i18n="hc.field.cronHint"></div>
+                        <div class="mt-2 d-flex flex-wrap gap-1 align-items-center">
+                            <span class="text-muted small me-1" data-i18n="hc.cron.samples">Common schedules (click to apply):</span>
+                            <span id="cronSamples" class="d-flex flex-wrap gap-1"></span>
+                        </div>
                     </div>
                 </form>
             </div>
