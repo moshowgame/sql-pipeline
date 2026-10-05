@@ -1,11 +1,19 @@
 # sql-pipeline
 
+[![GitHub](https://img.shields.io/badge/GitHub-moshowgame%2Fsql--pipeline-181717?logo=github)](https://github.com/moshowgame/sql-pipeline)
+[![CSDN](https://img.shields.io/badge/CSDN-zhengkai.blog.csdn.net-cf1322?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiI+PHRleHQgeD0iOCIgeT0iMTIiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkM8L3RleHQ+PC9zdmc+)](https://zhengkai.blog.csdn.net/)
+
 SQL 健康检查与发布编排平台：只读守卫（SqlGuard）、定时健康检查、Release Plan/Runbook（按目录顺序的发布编排 + Pipeline 可视化）、WAIT/CONTINUE 人工卡点、xMatters 告警通知。
 
 > 按技术设计文档 `tech_design.md`（v1.1，与实现同步）实现。**平台元数据库与目标业务库均以 PostgreSQL 为主**（一期不考虑 Oracle / MySQL）。
 
 ## AUTHOR
-Powered by [Moshow郑锴](https://zhengkai.blog.csdn.net/)
+
+**Moshow（郑锴）**
+
+- GitHub 仓库：<https://github.com/moshowgame/sql-pipeline>（欢迎 Star / Issue / PR）
+- CSDN 博客：<https://zhengkai.blog.csdn.net/>
+- 开源协议：MIT License
 
 ## 功能总览
 

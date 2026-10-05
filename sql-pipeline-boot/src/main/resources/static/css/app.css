@@ -360,3 +360,20 @@ pre.bg-light { background: #f8f9fb !important; border: 1px solid var(--sp-border
 
 .pl-mini-table { font-size: .74rem; }
 .pl-mini-table th { font-size: .68rem; }
+
+/* ---------------- 页脚 ---------------- */
+
+.app-footer {
+    border-top: 1px solid var(--sp-border);
+    margin-top: 2rem;
+    padding: 1.1rem 0 1.6rem;
+    text-align: center;
+    color: var(--sp-text-secondary);
+    font-size: .8rem;
+}
+
+.app-footer a { color: var(--sp-primary); text-decoration: none; font-weight: 500; }
+
+.app-footer a:hover { text-decoration: underline; }
+
+.app-footer .sep { margin: 0 .5rem; color: #c7cdd6; }
