@@ -7,13 +7,27 @@ SQL 健康检查与发布编排平台：只读守卫（SqlGuard）、定时健�
 
 > 按技术设计文档 `tech_design.md`（v1.1，与实现同步）实现。**平台元数据库与目标业务库均以 PostgreSQL 为主**（一期不考虑 Oracle / MySQL）。
 
-## AUTHOR
+## 👤 AUTHOR
 
-**Moshow（郑锴）**
+**Moshow 郑锴** —— 一名热爱技术与分享的 Technical Lead / 数据科学家 / SpringBoot 专家。
 
-- GitHub 仓库：<https://github.com/moshowgame/sql-pipeline>（欢迎 Star / Issue / PR）
-- CSDN 博客：<https://zhengkai.blog.csdn.net/>
-- 开源协议：MIT License
+[![CSDN](https://img.shields.io/badge/CSDN-博客之星2025年度TOP100-fc5531)](https://zhengkai.blog.csdn.net/)
+[![GitHub](https://img.shields.io/badge/GitHub-4K_Stars-181717?logo=github)](https://github.com/moshowgame)
+[![微信公众号](https://img.shields.io/badge/微信公众号-软件开发大百科-07c160)](https://zhengkai.blog.csdn.net/)
+
+<details open>
+<summary><b>🏅 权威认证</b></summary>
+
+| 领域 | 认证 |
+|---|---|
+| ☁️ 云计算 | GCA 谷歌云架构师认证 · 阿里云 ACP 认证 |
+| 🧠 数据与 AI | Neo4j 数据科学家认证 · 广东省人工智能训练师认证 |
+| 📋 项目管理 | PMP 项目管理认证 · CSPM 项目管理专业人员能力评价认证 |
+| 🏢 企业数字化 | 金蝶高级 CRM 供应链工程师认证 |
+
+</details>
+
+> 💡 更多技术分享：[CSDN 博客](https://zhengkai.blog.csdn.net/) · [GitHub @moshowgame](https://github.com/moshowgame) · 公众号【软件开发大百科】
 
 ## 功能总览
 
