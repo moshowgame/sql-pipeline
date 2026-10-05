@@ -45,6 +45,7 @@ SQL 健康检查与发布编排平台：只读守卫（SqlGuard）、定时健�
 <image src="./screencap/health_check_result.png">
 <image src="./screencap/health_check_edit.png">
 <image src="./screencap/release_plan.png">
+<image src="./screencap/release_detail.png">
 
 ## 模块结构（对齐设计文档 §17.2）
 
