@@ -185,6 +185,11 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <div class="d-flex align-items-center mb-2">
+                    <label class="form-label mb-0 me-2 small" data-i18n="hc.runs.day">Day</label>
+                    <input id="runsDayFilter" type="date" class="form-control form-control-sm" style="width:170px" onchange="runsState.day=this.value; runsState.page=1; loadRuns();">
+                    <button class="btn btn-outline-secondary btn-sm ms-1" onclick="runsState.day=''; document.getElementById('runsDayFilter').value=''; runsState.page=1; loadRuns();" data-i18n="hc.runs.allDays">All dates</button>
+                </div>
                 <table class="table table-sm table-hover align-middle">
                     <thead class="table-light">
                     <tr>
@@ -220,6 +225,11 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <div class="d-flex align-items-center mb-2">
+                    <label class="form-label mb-0 me-2 small" data-i18n="hc.history.day">Day</label>
+                    <input id="historyDayFilter" type="date" class="form-control form-control-sm" style="width:170px" onchange="historyState.day=this.value; historyState.page=1; loadHistoryPage();">
+                    <button class="btn btn-outline-secondary btn-sm ms-1" onclick="historyState.day=''; document.getElementById('historyDayFilter').value=''; historyState.page=1; loadHistoryPage();" data-i18n="hc.runs.allDays">All dates</button>
+                </div>
                 <table class="table table-sm table-hover align-middle">
                     <thead class="table-light">
                     <tr>
@@ -234,6 +244,13 @@
                     </thead>
                     <tbody id="historyTable"></tbody>
                 </table>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="text-muted small" id="historyPagerInfo"></span>
+                    <div>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="historyPage(-1)" data-i18n="hc.runs.prev">Prev</button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="historyPage(1)" data-i18n="hc.runs.next">Next</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

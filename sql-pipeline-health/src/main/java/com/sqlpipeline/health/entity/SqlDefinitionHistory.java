@@ -23,4 +23,6 @@ public class SqlDefinitionHistory {
     private String changedBy;
     private LocalDateTime changedAt;
     private String changeType;
+    /** 分页查询时由窗口函数填充的总数，不落库。 */
+    private Long totalCount;
 }

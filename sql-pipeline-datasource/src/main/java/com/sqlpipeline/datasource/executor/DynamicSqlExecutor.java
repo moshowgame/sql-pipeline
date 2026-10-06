@@ -14,6 +14,7 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.SQLTimeoutException;
+import java.sql.Statement;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.time.LocalDate;
@@ -35,21 +36,27 @@ public class DynamicSqlExecutor {
 
     private final DataSourceRegistry registry;
 
-    /** 健康检查用：只读查询，限制行数与超时。 */
+    /** 健康检查用：只读查询（显式只读事务，服务端强制；限制行数与超时）。 */
     public QueryResult query(String connKey, String sql, List<Object> params, int maxRows, int timeoutSec) {
         DataSource ds = registry.get(connKey);
+        QueryResult result;
         try (Connection conn = ds.getConnection()) {
-            // L3 兜底：PostgreSQL 驱动会向服务端发送 SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY
-            conn.setReadOnly(true);
-            conn.setAutoCommit(true);
+            // L3 兜底：显式只读事务。pgjdbc 的 conn.setReadOnly 在 autocommit 模式下不严格生效，
+            // 因此用 BEGIN TRANSACTION READ ONLY 由服务端强制——任何写操作（含 nextval 等副作用 SELECT）都会报错。
+            conn.setAutoCommit(false);
+            try (Statement begin = conn.createStatement()) {
+                begin.execute("BEGIN TRANSACTION READ ONLY");
+            }
             try (PreparedStatement ps = conn.prepareStatement(sql)) {
                 ps.setQueryTimeout(Math.max(1, timeoutSec));
                 ps.setMaxRows(Math.max(1, maxRows) + 1); // 多读一行用于判断是否截断
                 bindParams(ps, params);
                 try (ResultSet rs = ps.executeQuery()) {
-                    return readResultSet(rs, maxRows);
+                    result = readResultSet(rs, maxRows);
                 }
             }
+            conn.rollback(); // 只读事务：显式回滚结束，无任何副作用
+            return result;
         } catch (SQLTimeoutException e) {
             throw new SqlExecException(ErrorCode.HC_SQL_TIMEOUT,
                     "error.hc.sqlTimeout", new Object[]{timeoutSec}, e);

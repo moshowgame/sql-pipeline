@@ -13,8 +13,16 @@
         )
     </insert>
 
-    <select id="selectByDefId" resultType="com.sqlpipeline.health.entity.SqlDefinitionHistory">
-        SELECT * FROM sql_definition_history WHERE sql_def_id = #{sqlDefId}
-        ORDER BY version DESC, id DESC
+    <select id="pageByDefId" resultType="com.sqlpipeline.health.entity.SqlDefinitionHistory">
+        SELECT t.*, count(*) OVER () AS total_count
+        FROM (
+            SELECT * FROM sql_definition_history
+            WHERE sql_def_id = #{sqlDefId}
+            <if test="day != null and day != ''">
+                AND changed_at::date = CAST(#{day} AS date)
+            </if>
+            ORDER BY version DESC, id DESC
+            LIMIT #{limit} OFFSET #{offset}
+        ) t
     </select>
 </mapper>

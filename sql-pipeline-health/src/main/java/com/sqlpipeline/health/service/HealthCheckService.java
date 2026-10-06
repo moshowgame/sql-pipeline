@@ -32,6 +32,8 @@ import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.scheduling.support.CronTrigger;
 import org.springframework.stereotype.Service;
 
@@ -64,9 +66,19 @@ public class HealthCheckService {
     private final HealthProperties properties;
     private final AlertService alertService;
     private final NotifyChannelMapper notifyChannelMapper;
+    private final MessageSource messageSource;
     // 通过 ObjectProvider 延迟获取，打破 scheduler ↔ service 的构造期循环依赖
     private final ObjectProvider<HealthCheckScheduler> schedulerProvider;
     private final ObjectProvider<MeterRegistry> meterRegistry;
+
+    /** keyed 异常按当前 locale 渲染（与 GlobalExceptionHandler 一致）。 */
+    private String resolveMsg(BizException e) {
+        if (e.getMessageKey() == null) {
+            return e.getMessage();
+        }
+        return messageSource.getMessage(e.getMessageKey(), e.getArgs(), e.getMessage(),
+                org.springframework.context.i18n.LocaleContextHolder.getLocale());
+    }
 
     // ---------- 定义管理 ----------
 
@@ -181,7 +193,7 @@ public class HealthCheckService {
         } catch (BizException e) {
             run.setStatus(e.getErrorCode() == ErrorCode.HC_SQL_TIMEOUT
                     ? RunStatus.TIMEOUT.name() : RunStatus.ERROR.name());
-            run.setErrorMsg(JsonUtils.truncate(e.getMessage(), 2000));
+            run.setErrorMsg(JsonUtils.truncate(resolveMsg(e), 2000));
         } catch (Exception e) {
             run.setStatus(RunStatus.ERROR.name());
             run.setErrorMsg(JsonUtils.truncate(e.getMessage(), 2000));
@@ -200,18 +212,23 @@ public class HealthCheckService {
         return run;
     }
 
-    public PageResult<HealthCheckRun> pageRuns(Long defId, int page, int size) {
+    public PageResult<HealthCheckRun> pageRuns(Long defId, int page, int size, String day) {
         requireExists(defId);
         int safePage = Math.max(1, page);
         int safeSize = Math.min(Math.max(1, size), 100);
-        List<HealthCheckRun> items = runMapper.pageByDefId(defId, safeSize, (long) (safePage - 1) * safeSize);
+        List<HealthCheckRun> items = runMapper.pageByDefId(defId, day, safeSize, (long) (safePage - 1) * safeSize);
         long total = items.isEmpty() ? 0 : items.get(0).getTotalCount();
         return PageResult.of(total, safePage, safeSize, items);
     }
 
-    public List<SqlDefinitionHistory> history(Long defId) {
+    public PageResult<SqlDefinitionHistory> history(Long defId, int page, int size, String day) {
         requireExists(defId);
-        return historyMapper.selectByDefId(defId);
+        int safePage = Math.max(1, page);
+        int safeSize = Math.min(Math.max(1, size), 100);
+        List<SqlDefinitionHistory> items = historyMapper.pageByDefId(defId, day, safeSize,
+                (long) (safePage - 1) * safeSize);
+        long total = items.isEmpty() ? 0 : items.get(0).getTotalCount();
+        return PageResult.of(total, safePage, safeSize, items);
     }
 
     // ---------- 内部 ----------

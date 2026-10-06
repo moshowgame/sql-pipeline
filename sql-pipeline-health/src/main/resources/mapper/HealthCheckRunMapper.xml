@@ -22,7 +22,11 @@
     <select id="pageByDefId" resultType="com.sqlpipeline.health.entity.HealthCheckRun">
         SELECT t.*, count(*) OVER () AS total_count
         FROM (
-            SELECT * FROM health_check_run WHERE sql_def_id = #{sqlDefId}
+            SELECT * FROM health_check_run
+            WHERE sql_def_id = #{sqlDefId}
+            <if test="day != null and day != ''">
+                AND started_at::date = CAST(#{day} AS date)
+            </if>
             ORDER BY started_at DESC, id DESC
             LIMIT #{limit} OFFSET #{offset}
         ) t

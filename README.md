@@ -311,6 +311,19 @@ DRAFT --start(CR,Remark)--> RUNNING --全部完成--> COMPLETED
                               └─ 目录不存在 ──> SKIPPED
 ```
 
+## 只读控制（四层防线）
+
+Health Check 的"仅 SELECT"由四层防线保证，任何一层被绕过都有下一层兜底：
+
+| 层 | 位置 | 机制 |
+|---|---|---|
+| L1 | 保存定义时 | JSqlParser AST 解析，非 SELECT（INSERT/UPDATE/DELETE/DROP/`SELECT INTO` 等）直接拒绝（SG0002），脏数据不入库 |
+| L2 | 每次执行前 | 同样的 AST 校验再跑一遍——防止历史脏数据或绕过 API 直改数据库后残留的 SQL |
+| L3 | 执行连接层 | 查询包裹在 **`BEGIN TRANSACTION READ ONLY`** 显式只读事务中，由 PostgreSQL 服务端强制——即使是 `SELECT nextval()` 这类带副作用的函数也会报错；事务结束即 ROLLBACK，零副作用 |
+| L4 | 目标库账号 | 推荐为巡检使用只读账号（`GRANT SELECT`），从数据库权限层兜底 |
+
+L1/L2 的 AST 校验基于 JSqlParser，解析失败同样拒绝（fail-closed）；SqlSplitter 正确处理字符串/dollar-quote 内的分号与注释，无法借注释或字符串拼接绕过。L3 在显式只读事务内执行，`UPDATE`/`DELETE`/`INSERT`/`nextval()` 等任何写操作都会被 PostgreSQL 报错（如"cannot execute nextval() in a read-only transaction"）。
+
 ## 可观测性
 
 - 日志：健康检查执行（INFO）、SqlGuard 拦截、发布步骤执行、未捕获异常（含 traceId）

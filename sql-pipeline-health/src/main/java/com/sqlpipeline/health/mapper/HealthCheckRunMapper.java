@@ -14,6 +14,7 @@ public interface HealthCheckRunMapper {
     int updateResult(HealthCheckRun entity);
 
     List<HealthCheckRun> pageByDefId(@Param("sqlDefId") Long sqlDefId,
+                                     @Param("day") String day,
                                      @Param("limit") int limit,
                                      @Param("offset") long offset);
 }

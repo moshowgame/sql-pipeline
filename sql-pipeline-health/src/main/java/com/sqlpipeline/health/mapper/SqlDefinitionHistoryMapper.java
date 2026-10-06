@@ -11,5 +11,9 @@ public interface SqlDefinitionHistoryMapper {
 
     int insert(SqlDefinitionHistory entity);
 
-    List<SqlDefinitionHistory> selectByDefId(@Param("sqlDefId") Long sqlDefId);
+    /** 分页 + 可选按日期过滤（changed_at::date）。totalCount 经窗口函数回填。 */
+    List<SqlDefinitionHistory> pageByDefId(@Param("sqlDefId") Long sqlDefId,
+                                           @Param("day") String day,
+                                           @Param("limit") int limit,
+                                           @Param("offset") long offset);
 }

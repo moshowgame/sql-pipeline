@@ -65,13 +65,17 @@ public class HealthCheckController {
     @GetMapping("/{id}/runs")
     public R<PageResult<HealthCheckRun>> runs(@PathVariable Long id,
                                               @RequestParam(defaultValue = "1") int page,
-                                              @RequestParam(defaultValue = "20") int size) {
-        return R.ok(healthCheckService.pageRuns(id, page, size));
+                                              @RequestParam(defaultValue = "20") int size,
+                                              @RequestParam(required = false) String day) {
+        return R.ok(healthCheckService.pageRuns(id, page, size, day));
     }
 
     @GetMapping("/{id}/history")
-    public R<List<SqlDefinitionHistory>> history(@PathVariable Long id) {
-        return R.ok(healthCheckService.history(id));
+    public R<PageResult<SqlDefinitionHistory>> history(@PathVariable Long id,
+                                                       @RequestParam(defaultValue = "1") int page,
+                                                       @RequestParam(defaultValue = "20") int size,
+                                                       @RequestParam(required = false) String day) {
+        return R.ok(healthCheckService.history(id, page, size, day));
     }
 
     @PostMapping("/{id}/enable")

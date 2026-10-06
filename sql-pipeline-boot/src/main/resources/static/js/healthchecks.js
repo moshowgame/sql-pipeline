@@ -1,7 +1,8 @@
 let definitions = [];
 let connections = [];
 let notifyChannels = [];
-let runsState = { defId: null, page: 1, size: 10, total: 0 };
+let runsState = { defId: null, page: 1, size: 10, total: 0, day: '' };
+let historyState = { defId: null, page: 1, size: 10, total: 0, day: '' };
 
 /** 常用 Cron 示例（Spring 6 段：秒 分 时 日 月 周），点击应用到输入框。 */
 const CRON_SAMPLES = [
@@ -223,8 +224,10 @@ function loadListQuietly() {
 
 function openRuns(id) {
     const d = definitions.find(x => x.id === id);
-    runsState = { defId: id, page: 1, size: 10, total: 0 };
+    runsState = { defId: id, page: 1, size: 10, total: 0, day: '' };
     $('#runsModalTitle').text('#' + id + ' ' + (d ? d.name : ''));
+    const dayInput = document.getElementById('runsDayFilter');
+    if (dayInput) dayInput.value = '';
     $('#runsTable').html('<tr><td colspan="7" class="text-center text-muted py-3">' + App.escapeHtml(I18N.t('common.loading')) + '</td></tr>');
     new bootstrap.Modal('#runsModal').show();
     loadRuns();
@@ -232,7 +235,9 @@ function openRuns(id) {
 
 function loadRuns() {
     const s = runsState;
-    App.api('GET', '/api/health-checks/' + s.defId + '/runs?page=' + s.page + '&size=' + s.size).then(function (pr) {
+    let url = '/api/health-checks/' + s.defId + '/runs?page=' + s.page + '&size=' + s.size;
+    if (s.day) url += '&day=' + s.day;
+    App.api('GET', url).then(function (pr) {
         s.total = pr.total;
         const rows = pr.items.map(function (r) {
             return '<tr><td class="mono">' + App.fmtTime(r.startedAt) + '</td>' +
@@ -261,10 +266,22 @@ function runsPage(delta) {
 
 function openHistory(id) {
     const d = definitions.find(x => x.id === id);
+    historyState = { defId: id, page: 1, size: 10, total: 0, day: '' };
     $('#historyModalTitle').text('#' + id + ' ' + (d ? d.name : ''));
+    const dayInput = document.getElementById('historyDayFilter');
+    if (dayInput) dayInput.value = '';
     $('#historyTable').html('<tr><td colspan="7" class="text-center text-muted py-3">' + App.escapeHtml(I18N.t('common.loading')) + '</td></tr>');
-    App.api('GET', '/api/health-checks/' + id + '/history').then(function (list) {
-        const rows = (list || []).map(function (h) {
+    new bootstrap.Modal('#historyModal').show();
+    loadHistoryPage();
+}
+
+function loadHistoryPage() {
+    const s = historyState;
+    let url = '/api/health-checks/' + s.defId + '/history?page=' + s.page + '&size=' + s.size;
+    if (s.day) url += '&day=' + s.day;
+    App.api('GET', url).then(function (pr) {
+        s.total = pr.total;
+        const rows = pr.items.map(function (h) {
             return '<tr><td class="mono">v' + h.version + '</td>' +
                 '<td>' + App.badge(h.changeType, h.changeType === 'CREATE' ? 'success' : h.changeType === 'DISABLE' ? 'secondary' : 'info') + '</td>' +
                 '<td class="sql-cell" title="' + App.escapeHtml(h.sqlText || '') + '">' + App.escapeHtml(h.sqlText || '-') + '</td>' +
@@ -275,8 +292,18 @@ function openHistory(id) {
         });
         $('#historyTable').html(rows.length ? rows.join('') :
             '<tr><td colspan="7" class="text-center text-muted py-3">' + App.escapeHtml(I18N.t('hc.history.empty')) + '</td></tr>');
+        const maxPage = Math.max(1, Math.ceil(s.total / s.size));
+        $('#historyPagerInfo').text(I18N.t('hc.runs.pager', { total: s.total, page: s.page, max: maxPage }));
     });
-    new bootstrap.Modal('#historyModal').show();
+}
+
+function historyPage(delta) {
+    const s = historyState;
+    const maxPage = Math.max(1, Math.ceil(s.total / s.size));
+    const next = s.page + delta;
+    if (next < 1 || next > maxPage) return;
+    s.page = next;
+    loadHistoryPage();
 }
 
 function toggleDef(id, enabled) {
