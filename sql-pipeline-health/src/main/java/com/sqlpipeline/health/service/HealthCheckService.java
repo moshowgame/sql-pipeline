@@ -231,6 +231,11 @@ public class HealthCheckService {
             def.setAssertValue(null);
         }
         def.setAssertConfig(null);
+        // 名称唯一：同名定义（排除自身）拒绝
+        SqlDefinition sameName = defMapper.selectByName(def.getName());
+        if (sameName != null && !sameName.getId().equals(def.getId())) {
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.hc.nameExists", def.getName());
+        }
         // 告警通道绑定校验：通道必须存在
         if (def.getNotifyChannelId() != null
                 && notifyChannelMapper.selectById(def.getNotifyChannelId()) == null) {

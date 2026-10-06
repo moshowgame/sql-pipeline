@@ -67,6 +67,8 @@ CREATE TABLE IF NOT EXISTS sql_definition (
     updated_at    TIMESTAMP    NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_sql_def_conn ON sql_definition (conn_key);
+-- name 唯一（列表/巡检项以名称标识；存量库如有重名需先手工清理才能建唯一索引）
+CREATE UNIQUE INDEX IF NOT EXISTS uk_sql_def_name ON sql_definition (name);
 -- 兼容存量库：补列
 ALTER TABLE sql_definition ADD COLUMN IF NOT EXISTS assert_op VARCHAR(8);
 ALTER TABLE sql_definition ADD COLUMN IF NOT EXISTS assert_value NUMERIC;

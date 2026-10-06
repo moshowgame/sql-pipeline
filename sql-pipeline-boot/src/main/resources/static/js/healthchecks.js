@@ -69,25 +69,25 @@ function render() {
         const alertsText = d.notifyChannelId
             ? App.badge(d.notifyChannelName || ('#' + d.notifyChannelId), 'info')
             : '<span class="text-muted fw-bold">NO</span>';
+        const connLabel = d.connKey ? '<span class="text-muted small" title="connKey">' + App.escapeHtml(d.connKey) + '</span><br>' : '';
         return '<tr data-id="' + d.id + '">' +
             '<td>' + d.id + '</td>' +
-            '<td class="fw-bold">' + App.escapeHtml(d.name) + '</td>' +
-            '<td class="mono">' + App.escapeHtml(d.connKey) + '</td>' +
-            '<td class="sql-cell" title="' + App.escapeHtml(d.sqlText) + '">' + App.escapeHtml(d.sqlText) + '</td>' +
+            '<td class="fw-bold">' + App.escapeHtml(d.name) +
+            (d.notifyChannelName ? '' : '') + '</td>' +
+            '<td>' + connLabel + '<span class="sql-cell d-inline-block" style="max-width:200px" title="' + App.escapeHtml(d.sqlText) + '">' + App.escapeHtml(d.sqlText) + '</span></td>' +
             '<td>' + assertText + '</td>' +
             '<td>' + alertsText + '</td>' +
             '<td class="mono">' + App.escapeHtml(d.cronExpr || '-') + '</td>' +
             '<td class="mono">' + d.timeoutSec + 's</td>' +
-            '<td class="mono">v' + d.version + '</td>' +
             '<td>' + (enabled ? App.badge(I18N.t('common.enabled'), 'success') : App.badge(I18N.t('common.disabled'), 'secondary')) + '</td>' +
             '<td><div class="btn-group btn-group-sm" role="group">' +
-            '<button class="btn btn-success" onclick="runDef(' + d.id + ')">' + I18N.t('hc.runModal.exec') + '</button>' +
-            '<button class="btn btn-outline-info" onclick="openRuns(' + d.id + ')">' + I18N.t('hc.runs.title') + '</button>' +
-            '<button class="btn btn-outline-secondary" onclick="openHistory(' + d.id + ')">' + I18N.t('hc.history.title') + '</button>' +
-            '<button class="btn btn-outline-primary" onclick="openEdit(' + d.id + ')">' + I18N.t('common.edit') + '</button>' +
+            '<button class="btn btn-success" title="' + App.escapeHtml(I18N.t('hc.runModal.exec')) + '" onclick="runDef(' + d.id + ')">▶ ' + App.escapeHtml(I18N.t('hc.runModal.exec')) + '</button>' +
+            '<button class="btn btn-outline-info hc-icon-btn" title="' + App.escapeHtml(I18N.t('hc.runs.title')) + '" onclick="openRuns(' + d.id + ')">📊</button>' +
+            '<button class="btn btn-outline-secondary hc-icon-btn" title="' + App.escapeHtml(I18N.t('hc.history.title')) + '" onclick="openHistory(' + d.id + ')">🕘</button>' +
+            '<button class="btn btn-outline-primary hc-icon-btn" title="' + App.escapeHtml(I18N.t('common.edit')) + '" onclick="openEdit(' + d.id + ')">✏️</button>' +
             (enabled
-                ? '<button class="btn btn-outline-warning" onclick="toggleDef(' + d.id + ', 0)">' + I18N.t('common.disable') + '</button>'
-                : '<button class="btn btn-outline-success" onclick="toggleDef(' + d.id + ', 1)">' + I18N.t('common.enable') + '</button>') +
+                ? '<button class="btn btn-outline-warning hc-icon-btn" title="' + App.escapeHtml(I18N.t('common.disable')) + '" onclick="toggleDef(' + d.id + ', 0)">⏻</button>'
+                : '<button class="btn btn-outline-success hc-icon-btn" title="' + App.escapeHtml(I18N.t('common.enable')) + '" onclick="toggleDef(' + d.id + ', 1)">⏻</button>') +
             '</div></td></tr>';
     });
     $('#defTable').html(rows.join(''));

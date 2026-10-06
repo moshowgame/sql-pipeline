@@ -17,6 +17,8 @@ public interface SqlDefinitionMapper {
 
     SqlDefinition selectById(@Param("id") Long id);
 
+    SqlDefinition selectByName(@Param("name") String name);
+
     List<SqlDefinition> selectAll();
 
     List<SqlDefinition> selectEnabled();

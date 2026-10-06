@@ -377,3 +377,6 @@ pre.bg-light { background: #f8f9fb !important; border: 1px solid var(--sp-border
 .app-footer a:hover { text-decoration: underline; }
 
 .app-footer .sep { margin: 0 .5rem; color: #c7cdd6; }
+
+/* 图标按钮（悬停 tooltip 说明用途） */
+.hc-icon-btn { padding: .28rem .5rem; font-size: .82rem; line-height: 1.2; }

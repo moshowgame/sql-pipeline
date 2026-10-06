@@ -47,6 +47,10 @@
         SELECT * FROM sql_definition WHERE id = #{id}
     </select>
 
+    <select id="selectByName" resultType="com.sqlpipeline.health.entity.SqlDefinition">
+        SELECT * FROM sql_definition WHERE name = #{name}
+    </select>
+
     <select id="selectAll" resultType="com.sqlpipeline.health.entity.SqlDefinition">
         SELECT * FROM sql_definition ORDER BY id
     </select>
