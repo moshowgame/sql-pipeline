@@ -3,11 +3,12 @@
 <mapper namespace="com.sqlpipeline.release.mapper.ReleaseStepMapper">
 
     <insert id="batchInsert">
-        INSERT INTO release_step (plan_id, step_no, dir_path, conn_key, after_mode, executor, status, script_hash)
+        INSERT INTO release_step (plan_id, step_no, dir_path, conn_key, after_mode, executor, status, script_hash, verify_sql)
         VALUES
         <foreach collection="steps" item="s" separator=",">
             (#{s.planId}, #{s.stepNo}, #{s.dirPath}, #{s.connKey}, #{s.afterMode}, #{s.executor}, #{s.status},
-             CAST(#{s.scriptHash,jdbcType=VARCHAR} AS VARCHAR))
+             CAST(#{s.scriptHash,jdbcType=VARCHAR} AS VARCHAR),
+             CAST(#{s.verifySql,jdbcType=VARCHAR} AS VARCHAR))
         </foreach>
     </insert>
 

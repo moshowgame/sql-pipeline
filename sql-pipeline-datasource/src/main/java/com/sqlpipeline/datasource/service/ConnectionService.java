@@ -2,10 +2,12 @@ package com.sqlpipeline.datasource.service;
 
 import com.sqlpipeline.common.error.ErrorCode;
 import com.sqlpipeline.common.exception.BizException;
+import com.sqlpipeline.datasource.config.DatasourceProperties;
 import com.sqlpipeline.datasource.crypto.CryptoService;
 import com.sqlpipeline.datasource.entity.DbConnection;
 import com.sqlpipeline.datasource.mapper.DbConnectionMapper;
 import com.sqlpipeline.datasource.registry.DataSourceRegistry;
+import com.sqlpipeline.datasource.registry.PoolBudgetValidator;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import lombok.RequiredArgsConstructor;
@@ -14,12 +16,14 @@ import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.List;
 
 import static org.springframework.util.StringUtils.hasText;
 
-/** 连接管理：CRUD + 凭据加密 + 连接池热更新 + 连通性测试。 */
+/** 连接管理：CRUD + 凭据加密 + 连接池热更新 + 连通性测试（含只读账号探测）。 */
 @Service
 @RequiredArgsConstructor
 public class ConnectionService {
@@ -28,6 +32,8 @@ public class ConnectionService {
     private final CryptoService crypto;
     private final DataSourceRegistry registry;
     private final MessageSource messageSource;
+    private final PoolBudgetValidator poolBudgetValidator;
+    private final DatasourceProperties datasourceProperties;
 
     private String msg(String key, Object... args) {
         return messageSource.getMessage(key, args, key, LocaleContextHolder.getLocale());
@@ -51,10 +57,12 @@ public class ConnectionService {
             entity.setDriverClass("org.postgresql.Driver");
         }
         // INSERT 显式列出这些列，这里补默认值避免写入 NULL
-        if (entity.getPoolSize() == null) entity.setPoolSize(10);
+        if (entity.getPoolSize() == null) entity.setPoolSize(datasourceProperties.getDefaultPoolSize());
         if (entity.getConnTimeoutMs() == null) entity.setConnTimeoutMs(5000);
         if (entity.getMaxRows() == null) entity.setMaxRows(1000);
         if (entity.getQueryTimeoutS() == null) entity.setQueryTimeoutS(30);
+        // P0：同一目标库（规范化 jdbc_url 归组）的池容量总预算校验，超限 DS0004
+        poolBudgetValidator.validate(entity.getJdbcUrl(), entity.getPoolSize(), null);
         entity.setCreatedBy(operator);
         entity.setUpdatedBy(operator);
         mapper.insert(entity);
@@ -87,6 +95,8 @@ public class ConnectionService {
         if (hasText(plainPassword)) {
             old.setPasswordEnc(crypto.encrypt(plainPassword));
         }
+        // P0：池容量预算校验（更新后生效的 url + pool_size，排除自身旧值）
+        poolBudgetValidator.validate(old.getJdbcUrl(), old.getPoolSize(), old.getId());
         old.setUpdatedBy(operator);
         mapper.update(old);
         registry.reload(old.getConnKey());
@@ -123,13 +133,46 @@ public class ConnectionService {
         try (HikariDataSource ds = new HikariDataSource(cfg)) {
             try (Connection conn = ds.getConnection()) {
                 boolean valid = conn.isValid(3);
-                return new TestResult(valid, valid ? msg("error.ds.testOk", System.currentTimeMillis() - t0)
-                        : msg("error.ds.testInvalid"), System.currentTimeMillis() - t0);
+                String message;
+                if (valid) {
+                    message = msg("error.ds.testOk", System.currentTimeMillis() - t0);
+                    // P0 只读账号探测（L4 提示）：pg_roles 检查该账号是否为超级用户/可建对象，
+                    // 建议健康检查使用仅 GRANT SELECT 的专用只读角色（配合执行侧 BEGIN READ ONLY 双保险）
+                    String hint = probeReadOnlyRole(conn, e);
+                    if (hint != null) {
+                        message = message + " · " + hint;
+                    }
+                } else {
+                    message = msg("error.ds.testInvalid");
+                }
+                return new TestResult(valid, message, System.currentTimeMillis() - t0);
             }
         } catch (SQLException ex) {
             return new TestResult(false, msg("error.ds.testFailed", ex.getMessage()),
                     System.currentTimeMillis() - t0);
         }
+    }
+
+    /**
+     * 探测连接账号的角色权限（仅 PostgreSQL）：rolsuper / rolcreaterole / rolcreatedb / rolreplication
+     * 任一为真即提示改用只读账号；非 PG 或查询失败返回 null（探测不影响连通性结论）。
+     */
+    private String probeReadOnlyRole(Connection conn, DbConnection e) {
+        if (e.getDriverClass() == null || !e.getDriverClass().contains("postgresql")) {
+            return null;
+        }
+        String sql = "SELECT rolsuper, rolcreaterole, rolcreatedb, rolreplication "
+                + "FROM pg_roles WHERE rolname = current_user";
+        try (Statement st = conn.createStatement(); ResultSet rs = st.executeQuery(sql)) {
+            if (rs.next()) {
+                boolean privileged = rs.getBoolean(1) || rs.getBoolean(2)
+                        || rs.getBoolean(3) || rs.getBoolean(4);
+                return privileged ? msg("error.ds.privilegedHint", e.getUsername()) : null;
+            }
+        } catch (SQLException ignore) {
+            // pg_roles 探测失败不影响连通性结论
+        }
+        return null;
     }
 
     public record TestResult(boolean ok, String message, long latencyMs) {

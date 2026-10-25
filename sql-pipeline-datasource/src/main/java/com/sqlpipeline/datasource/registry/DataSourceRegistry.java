@@ -2,6 +2,7 @@ package com.sqlpipeline.datasource.registry;
 
 import com.sqlpipeline.common.error.ErrorCode;
 import com.sqlpipeline.common.exception.BizException;
+import com.sqlpipeline.datasource.config.DatasourceProperties;
 import com.sqlpipeline.datasource.crypto.CryptoService;
 import com.sqlpipeline.datasource.entity.DbConnection;
 import com.sqlpipeline.datasource.mapper.DbConnectionMapper;
@@ -37,6 +38,8 @@ public class DataSourceRegistry implements DisposableBean {
     private final DbConnectionMapper mapper;
     private final CryptoService crypto;
     private final ObjectProvider<MeterRegistry> meterRegistry;
+    private final PoolBudgetValidator budgetValidator;
+    private final DatasourceProperties datasourceProperties;
 
     @PostConstruct
     public void init() {
@@ -67,6 +70,24 @@ public class DataSourceRegistry implements DisposableBean {
         }
         bindMetrics(ds, e.getConnKey());
         log.info("数据源已注册: connKey={}, poolSize={}", e.getConnKey(), cfg.getMaximumPoolSize());
+        warnIfOverBudget(e);
+    }
+
+    /** P0 预算软告警：存量数据超预算不阻断启动（硬校验在连接 create/update 时执行），仅提示。 */
+    private void warnIfOverBudget(DbConnection e) {
+        try {
+            if (budgetValidator == null) {
+                return;
+            }
+            int used = budgetValidator.usedOf(e.getJdbcUrl());
+            int budget = datasourceProperties.getPoolBudgetPerUrl();
+            if (budget > 0 && used > budget) {
+                log.warn("同一目标库连接池总容量超预算: url={}, used={}, budget={}，请下调 pool_size 或引入 PgBouncer",
+                        e.getJdbcUrl(), used, budget);
+            }
+        } catch (Exception ignore) {
+            // 告警失败不影响注册
+        }
     }
 
     public DataSource get(String key) {

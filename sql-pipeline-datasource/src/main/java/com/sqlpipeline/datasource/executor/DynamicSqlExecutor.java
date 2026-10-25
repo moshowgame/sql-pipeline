@@ -2,6 +2,7 @@ package com.sqlpipeline.datasource.executor;
 
 import com.sqlpipeline.common.error.ErrorCode;
 import com.sqlpipeline.common.exception.SqlExecException;
+import com.sqlpipeline.datasource.config.DatasourceProperties;
 import com.sqlpipeline.datasource.registry.DataSourceRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -35,6 +36,7 @@ import javax.sql.DataSource;
 public class DynamicSqlExecutor {
 
     private final DataSourceRegistry registry;
+    private final DatasourceProperties properties;
 
     /** 健康检查用：只读查询（显式只读事务，服务端强制；限制行数与超时）。 */
     public QueryResult query(String connKey, String sql, List<Object> params, int maxRows, int timeoutSec) {
@@ -50,6 +52,12 @@ public class DynamicSqlExecutor {
             try (PreparedStatement ps = conn.prepareStatement(sql)) {
                 ps.setQueryTimeout(Math.max(1, timeoutSec));
                 ps.setMaxRows(Math.max(1, maxRows) + 1); // 多读一行用于判断是否截断
+                // P0 流式读取：autoCommit=false + fetchSize>0 时 pgjdbc 走游标分批拉取，
+                // 结果集不再整包载入内存（原缺陷：autoCommit=true 使 fetchSize 失效）
+                int fetch = properties.getFetchSize();
+                if (fetch > 0) {
+                    ps.setFetchSize(Math.min(fetch, Math.max(1, maxRows)));
+                }
                 bindParams(ps, params);
                 try (ResultSet rs = ps.executeQuery()) {
                     result = readResultSet(rs, maxRows);

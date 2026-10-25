@@ -44,6 +44,14 @@ sql-pipeline:
   crypto:
     # AES-256 密钥（Base64 的 32 字节），生成：openssl rand -base64 32
     key: ${SQL_PIPELINE_AES_KEY:gqclw7YITwnF6PJ9L0FCmX5UFJcWfyZvviPg+Xv8+Sw=}
+  datasource:
+    # P0 池容量全库预算：同一目标库（按规范化 jdbc_url 归组）所有启用连接的 pool_size 之和
+    # 不得超过该值，超限保存报 DS0004；多实例部署请下调并引入 PgBouncer
+    pool-budget-per-url: 20
+    # P0 流式读取：autoCommit=false + fetchSize>0 时 pgjdbc 按游标分批拉取结果集
+    fetch-size: 500
+    # 新建连接默认 pool_size（P0 由 10 下调）
+    default-pool-size: 8
   release:
     # 发布目录根路径：其下每个 release_YYYYMMDD 目录为一个发布计划
     base-path: ${RELEASE_BASE_PATH:./data/releases}
@@ -56,6 +64,17 @@ sql-pipeline:
       pool-size: 8
     default-timeout-sec: 30
     default-max-rows: 1000
+  auth:
+    # 简易登录认证：登录后签发 HMAC Token 并写入 HttpOnly Cookie（有效期=token-ttl，默认 1 天）
+    enabled: true
+    # Token 签名密钥，生产环境务必通过环境变量覆盖
+    token-secret: ${AUTH_TOKEN_SECRET:sql-pipeline-default-secret-please-change}
+    token-ttl: 24h
+    cookie-name: AUTH_TOKEN
+    # 内置用户（启动时不存在则自动创建，密码入库前经 BCrypt 加密）——快速添加用户只需加一行
+    default-users:
+      admin: admin123
+      dev: dev123
 
 logging:
   level:

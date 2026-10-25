@@ -10,7 +10,8 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
         "com.sqlpipeline.datasource.mapper",
         "com.sqlpipeline.health.mapper",
         "com.sqlpipeline.release.mapper",
-        "com.sqlpipeline.notify.mapper"
+        "com.sqlpipeline.notify.mapper",
+        "com.sqlpipeline.web.auth.mapper"
 })
 @ConfigurationPropertiesScan("com.sqlpipeline")
 public class SqlPipelineApplication {

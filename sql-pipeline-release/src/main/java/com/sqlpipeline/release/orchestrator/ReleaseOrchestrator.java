@@ -5,6 +5,7 @@ import com.sqlpipeline.common.error.ErrorCode;
 import com.sqlpipeline.common.exception.BizException;
 import com.sqlpipeline.common.util.JsonUtils;
 import com.sqlpipeline.datasource.entity.DbConnection;
+import com.sqlpipeline.datasource.guard.SqlGuard;
 import com.sqlpipeline.datasource.mapper.DbConnectionMapper;
 import com.sqlpipeline.datasource.registry.DataSourceRegistry;
 import com.sqlpipeline.notify.service.AlertService;
@@ -45,6 +46,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDateTime;
@@ -76,6 +78,8 @@ public class ReleaseOrchestrator {
     /** 非事务模式标记文件：置于步骤目录内，该目录逐条自动提交、失败不回滚（用于 CONCURRENTLY 等非事务 DDL）。 */
     private static final String NON_TX_MARKER = "_nontransactional";
     private static final Pattern CONCURRENTLY = Pattern.compile("(?i)\\bCONCURRENTLY\\b");
+    /** verify_sql 写入 release_sql_log 时使用的虚拟文件名（P0 提交前验证卡点）。 */
+    private static final String VERIFY_LOG_NAME = "(verify_sql)";
     private static final TypeReference<List<StepConfig>> STEP_CONFIG_LIST = new TypeReference<>() {
     };
 
@@ -86,6 +90,7 @@ public class ReleaseOrchestrator {
     private final ReleaseRunSummaryMapper summaryMapper;
     private final DbConnectionMapper connectionMapper;
     private final DataSourceRegistry registry;
+    private final SqlGuard sqlGuard;
     private final ReleaseLockRegistry lockRegistry;
     private final ReleaseEventPublisher publisher;
     private final ReleaseProperties properties;
@@ -191,7 +196,8 @@ public class ReleaseOrchestrator {
                             c != null && hasText(c.connKey()) ? c.connKey() : defaultConnKey,
                             c == null || !hasText(c.afterMode()) ? AfterMode.CONTINUE.name()
                                     : c.afterMode().toUpperCase(),
-                            c == null ? null : c.executor());
+                            c == null ? null : c.executor(),
+                            c == null ? null : c.verifySql());
                 })
                 .toList();
     }
@@ -407,6 +413,11 @@ public class ReleaseOrchestrator {
                 throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.connRequired", s.no());
             }
             validateConnKey(connKey);
+            // P0：verify_sql 在 start 时即做只读校验（fail-fast），执行时事务内复核
+            String verifySql = c != null && hasText(c.verifySql()) ? c.verifySql().trim() : null;
+            if (verifySql != null) {
+                sqlGuard.assertSelectOnly(verifySql);
+            }
             ReleaseStep step = new ReleaseStep();
             // 运行编号：配置的 stepNo 优先（SCAN 后可调整），否则使用目录名数字
             step.setStepNo(c != null && c.stepNo() != null && c.stepNo() >= 1 ? c.stepNo() : s.no());
@@ -416,6 +427,7 @@ public class ReleaseOrchestrator {
             step.setAfterMode(c != null && hasText(c.afterMode())
                     ? c.afterMode().toUpperCase() : AfterMode.CONTINUE.name());
             step.setExecutor(c == null ? null : c.executor());
+            step.setVerifySql(verifySql);
             step.setStatus(StepStatus.PENDING.name());
             step.setScriptHash(ScriptHash.of(s.dir(), properties.getSqlSuffix()));
             steps.add(step);
@@ -535,7 +547,15 @@ public class ReleaseOrchestrator {
             try {
                 conn.setAutoCommit(nonTx);
                 executeSqlFiles(conn, step, dir, nonTx, deadline, runSeq, operator);
-                if (!nonTx) {
+                if (nonTx) {
+                    // 非事务模式数据已逐条提交：verify_sql 即使失败也无法回滚，仅告警跳过
+                    if (hasText(step.getVerifySql())) {
+                        log.warn("非事务模式跳过 verify_sql（数据已逐条提交，验证失败也无法回滚）: planId={}, stepNo={}",
+                                step.getPlanId(), step.getStepNo());
+                    }
+                } else {
+                    // P0 验证卡点：COMMIT 之前在事务内复核落库结果（只读 SELECT，返回至少一行才放行），失败即整体回滚
+                    executeVerify(conn, step, deadline, runSeq, operator);
                     conn.commit();
                 }
                 stepMapper.markSuccess(step.getId(), System.currentTimeMillis() - t0);
@@ -608,6 +628,46 @@ public class ReleaseOrchestrator {
         }
     }
 
+    /**
+     * P0 验证卡点：COMMIT 之前在同一事务内执行 verify_sql。
+     * 语义：只读 SELECT（SqlGuard 校验），返回至少一行视为验证通过，否则抛出异常 → 整个步骤回滚。
+     * 结果记入 release_sql_log（file_name=(verify_sql)），与语句日志同样可追溯。
+     */
+    private void executeVerify(Connection conn, ReleaseStep step, long deadline,
+                               Integer runSeq, String operator) throws SQLException {
+        String verify = step.getVerifySql();
+        if (!hasText(verify)) {
+            return;
+        }
+        if (deadline > 0 && System.currentTimeMillis() > deadline) {
+            throw new SQLException(msg("error.rl.stepTimeout", properties.getStepTotalTimeoutSec()));
+        }
+        long t0 = System.currentTimeMillis();
+        sqlGuard.assertSelectOnly(verify); // 执行前复核只读（start 时已校验，防御配置中途被改库）
+        int rows;
+        try (Statement st = conn.createStatement()) {
+            st.setQueryTimeout(properties.getStatementTimeoutSec());
+            try (ResultSet rs = st.executeQuery(verify)) {
+                rows = 0;
+                while (rs.next()) {
+                    rows++;
+                }
+            }
+        } catch (SQLException e) {
+            insertSqlLog(step, VERIFY_LOG_NAME, 0, verify, "FAIL",
+                    System.currentTimeMillis() - t0, e.getMessage(), runSeq, operator);
+            throw new SQLException(msg("error.rl.verifyFailed", brief(e)), e);
+        }
+        if (rows < 1) {
+            insertSqlLog(step, VERIFY_LOG_NAME, 0, verify, "FAIL",
+                    System.currentTimeMillis() - t0, msg("error.rl.verifyNoRows"), runSeq, operator);
+            throw new SQLException(msg("error.rl.verifyNoRows"));
+        }
+        insertSqlLog(step, VERIFY_LOG_NAME, 0, verify, "SUCCESS",
+                System.currentTimeMillis() - t0, null, runSeq, operator);
+        log.info("verify_sql 验证通过: planId={}, stepNo={}, rows={}", step.getPlanId(), step.getStepNo(), rows);
+    }
+
     private void executeSingle(Connection conn, ReleaseStep step, Path file, int seq, String sql,
                                Integer runSeq, String operator) throws SQLException {
         long t0 = System.currentTimeMillis();
@@ -623,6 +683,11 @@ public class ReleaseOrchestrator {
 
     private void insertSqlLog(ReleaseStep step, Path file, int seq, String sql,
                               String status, long durationMs, String error, Integer runSeq, String operator) {
+        insertSqlLog(step, file.getFileName().toString(), seq, sql, status, durationMs, error, runSeq, operator);
+    }
+
+    private void insertSqlLog(ReleaseStep step, String fileName, int seq, String sql,
+                              String status, long durationMs, String error, Integer runSeq, String operator) {
         try {
             ReleaseSqlLog logRow = new ReleaseSqlLog();
             logRow.setPlanId(step.getPlanId());
@@ -630,7 +695,7 @@ public class ReleaseOrchestrator {
             logRow.setStepNo(step.getStepNo());
             logRow.setRunSeq(runSeq);
             logRow.setOperator(operator);
-            logRow.setFileName(file.getFileName().toString());
+            logRow.setFileName(fileName);
             logRow.setSeq(seq);
             logRow.setSqlPreview(JsonUtils.truncate(sql, 1000));
             logRow.setStatus(status);
@@ -638,7 +703,7 @@ public class ReleaseOrchestrator {
             logRow.setErrorMsg(error == null ? null : JsonUtils.truncate(error, 2000));
             sqlLogMapper.insert(logRow);
         } catch (Exception ex) {
-            log.error("SQL 明细日志写入失败: stepId={}, file={}, err={}", step.getId(), file, ex.getMessage());
+            log.error("SQL 明细日志写入失败: stepId={}, file={}, err={}", step.getId(), fileName, ex.getMessage());
         }
     }
 

@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS db_connection (
     password_enc    VARCHAR(512) NOT NULL,
     driver_class    VARCHAR(128) NOT NULL DEFAULT 'org.postgresql.Driver',
     default_schema  VARCHAR(64),
-    pool_size       INT          NOT NULL DEFAULT 10,
+    pool_size       INT          NOT NULL DEFAULT 8,
     conn_timeout_ms INT          NOT NULL DEFAULT 5000,
     max_rows        INT          NOT NULL DEFAULT 1000,
     query_timeout_s INT          NOT NULL DEFAULT 30,
@@ -38,6 +38,7 @@ COMMENT ON TABLE  db_connection                IS '数据库连接定义（目�
 COMMENT ON COLUMN db_connection.conn_key       IS '平台内引用名（健康检查/发布计划通过它引用连接）';
 COMMENT ON COLUMN db_connection.password_enc   IS 'AES-256-GCM 加密后的密码（接口仅返回掩码）';
 COMMENT ON COLUMN db_connection.default_schema IS '连接默认 Schema（空=驱动默认 search_path），建池时经 Hikari setSchema 生效';
+COMMENT ON COLUMN db_connection.pool_size      IS '连接池最大容量；同一目标库所有启用连接的 pool_size 之和不得超过 sql-pipeline.datasource.pool-budget-per-url（DS0004），多实例请用 PgBouncer';
 COMMENT ON COLUMN db_connection.max_rows       IS '健康检查查询最大行数';
 COMMENT ON COLUMN db_connection.enabled        IS '1 启用 / 0 禁用（软删，禁用时连接池同步移除）';
 
@@ -171,6 +172,7 @@ CREATE TABLE IF NOT EXISTS release_step (
     confirm_at   TIMESTAMP,
     retry_remark VARCHAR(512),
     script_hash  VARCHAR(64),
+    verify_sql   TEXT,
     started_at   TIMESTAMP,
     finished_at  TIMESTAMP,
     duration_ms  BIGINT,
@@ -183,12 +185,14 @@ ALTER TABLE release_step ADD COLUMN IF NOT EXISTS confirm_by VARCHAR(64);
 ALTER TABLE release_step ADD COLUMN IF NOT EXISTS confirm_at TIMESTAMP;
 ALTER TABLE release_step ADD COLUMN IF NOT EXISTS retry_remark VARCHAR(512);
 ALTER TABLE release_step ADD COLUMN IF NOT EXISTS script_hash VARCHAR(64);
+ALTER TABLE release_step ADD COLUMN IF NOT EXISTS verify_sql TEXT;
 
 COMMENT ON TABLE  release_step            IS '发布步骤：一个数字目录 = 一个事务；PENDING|RUNNING|SUCCESS|FAIL|WAITING_CONTINUE|SKIPPED';
 COMMENT ON COLUMN release_step.after_mode IS 'CONTINUE 自动推进 | WAIT 等人工确认';
 COMMENT ON COLUMN release_step.confirm_by IS 'WAIT 步骤人工确认人（continue 时记录，审计用）';
 COMMENT ON COLUMN release_step.retry_remark IS '最近一次重试备注';
 COMMENT ON COLUMN release_step.script_hash  IS 'start 时脚本内容 SHA-256（详情页实时比对，检测脚本变更）';
+COMMENT ON COLUMN release_step.verify_sql   IS 'P0 提交前验证卡点：事务模式下 COMMIT 前在事务内执行的只读 SELECT，返回至少一行才允许提交，否则整体回滚';
 
 -- 3.3 发布 SQL 明细日志
 CREATE TABLE IF NOT EXISTS release_sql_log (
@@ -330,3 +334,22 @@ WHERE NOT EXISTS (SELECT 1 FROM sql_definition WHERE name = 'sample - long trans
 -- SELECT 'sample-bizdb', 'Sample Business DB', 'jdbc:postgresql://localhost:5432/your_biz_db', 'app_user',
 --        '<AES-256-GCM ciphertext>', 'public', 0, 'sample-data'
 -- WHERE NOT EXISTS (SELECT 1 FROM db_connection WHERE conn_key = 'sample-bizdb');
+
+-- =====================================================================
+-- 6. 平台用户（登录认证）
+-- =====================================================================
+-- 默认用户（admin/dev 等）由应用启动时自动播种（见 DefaultUserSeeder），
+-- 密码在入库前经 PasswordEncryptor（默认 BCrypt）加密，故本脚本不插入任何用户行。
+
+CREATE TABLE IF NOT EXISTS platform_user (
+    username      VARCHAR(64)  PRIMARY KEY,
+    password_hash VARCHAR(100) NOT NULL,
+    display_name  VARCHAR(64),
+    enabled       SMALLINT     NOT NULL DEFAULT 1,
+    created_at    TIMESTAMP    NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMP    NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE  platform_user             IS '平台用户（登录认证），密码为 BCrypt 密文';
+COMMENT ON COLUMN platform_user.password_hash IS 'PasswordEncryptor 加密后的密码（默认 BCrypt）';
+COMMENT ON COLUMN platform_user.enabled     IS '1 启用 / 0 禁用';

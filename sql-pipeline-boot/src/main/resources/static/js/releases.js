@@ -166,6 +166,9 @@ function nodeHtml(s) {
     if (s.executor) {
         meta.push('👤 ' + App.escapeHtml(s.executor));
     }
+    if (s.verifySql) {
+        meta.push('🛡 verify');
+    }
     if (s.confirmBy) {
         meta.push('✓ ' + App.escapeHtml(s.confirmBy));
     }
@@ -200,6 +203,7 @@ function openStepResult(stepNo) {
         [I18N.t('rel.info.defaultConn'), App.escapeHtml(s.connKey || '-')],
         ['afterMode', App.badge(s.afterMode, s.afterMode === 'WAIT' ? 'warning' : 'info')],
         [I18N.t('rel.steps.col.executor'), s.executor ? App.escapeHtml(s.executor) : I18N.t('common.unlimited')],
+        [I18N.t('rel.createModal.verifySql'), s.verifySql ? '<span class="mono sql-text">' + App.escapeHtml(s.verifySql) + '</span>' : I18N.t('common.unlimited')],
         [I18N.t('common.duration'), App.fmtMs(s.durationMs)],
         [I18N.t('rel.steps.col.retries'), (s.retryCount || 0) + (s.retryRemark ? '（' + App.escapeHtml(s.retryRemark) + '）' : '')],
         [I18N.t('common.time'), App.fmtTime(s.startedAt) + ' → ' + App.fmtTime(s.finishedAt)]
@@ -354,7 +358,7 @@ function editPlan(id) {
     $('#cDefaultConn').html(connSelectOptions(p.defaultConnKey));
     let cfgs = [];
     try { cfgs = JSON.parse(p.stepConfig || '[]') || []; } catch (e) { /* ignore */ }
-    cfgs.forEach(c => addStepRow(c.stepNo, c.connKey, c.afterMode, c.executor, c.dirName));
+    cfgs.forEach(c => addStepRow(c.stepNo, c.connKey, c.afterMode, c.executor, c.dirName, c.verifySql));
     if (!cfgs.length) addStepRow();
     toggleReleaseType();
     $('#createModal .btn-primary').show();
@@ -375,12 +379,12 @@ function viewPlan(id) {
     $('#cDefaultConn').html(connSelectOptions(p.defaultConnKey));
     let cfgs = [];
     try { cfgs = JSON.parse(p.stepConfig || '[]') || []; } catch (e) { /* ignore */ }
-    cfgs.forEach(c => addStepRow(c.stepNo, c.connKey, c.afterMode, c.executor, c.dirName));
+    cfgs.forEach(c => addStepRow(c.stepNo, c.connKey, c.afterMode, c.executor, c.dirName, c.verifySql));
     if (!cfgs.length) addStepRow();
     toggleReleaseType();
     $('#cScanBtn').prop('disabled', true);
     $('#cPlanName, #cReleaseType, #cReleasePath, #cDefaultConn, #cAddStepBtn').prop('disabled', true);
-    $('#stepConfigRows input, #stepConfigRows select').prop('disabled', true);
+    $('#stepConfigRows input, #stepConfigRows select, #stepConfigRows textarea').prop('disabled', true);
     $('#stepConfigRows .btn-outline-danger').hide();
     $('#createModal .btn-primary').hide();
     $('#createModalTitle').text(I18N.t('rel.viewModal.title', { id: id }));
@@ -397,7 +401,7 @@ function toggleReleaseType() {
     }
 }
 
-function addStepRow(no, connKey, afterMode, executor, dirName) {
+function addStepRow(no, connKey, afterMode, executor, dirName, verifySql) {
     const dirCell = dirName
         ? '<span class="mono small">' + App.escapeHtml(dirName) + '</span><input type="hidden" class="sc-dir" value="' + App.escapeHtml(dirName) + '">'
         : '<span class="text-muted">—</span>';
@@ -410,6 +414,7 @@ function addStepRow(no, connKey, afterMode, executor, dirName) {
         '<option value="CONTINUE"' + (afterMode !== 'WAIT' ? ' selected' : '') + '>CONTINUE</option>' +
         '<option value="WAIT"' + (afterMode === 'WAIT' ? ' selected' : '') + '>WAIT</option></select></td>' +
         '<td><input class="form-control form-control-sm sc-executor" value="' + App.escapeHtml(executor || '') + '" placeholder="' + App.escapeHtml(I18N.t('rel.createModal.executorPlaceholder')) + '"></td>' +
+        '<td><textarea class="form-control form-control-sm sc-verify sql-text" rows="2" placeholder="' + App.escapeHtml(I18N.t('rel.createModal.verifySqlPlaceholder')) + '">' + App.escapeHtml(verifySql || '') + '</textarea></td>' +
         '<td><button class="btn btn-outline-danger btn-sm" onclick="$(this).closest(\'tr\').remove()">×</button></td></tr>';
     $('#stepConfigRows').append(tr);
 }
@@ -424,7 +429,8 @@ function collectStepConfigs() {
             stepNo: no,
             connKey: $(this).find('.sc-conn').val() || null,
             afterMode: $(this).find('.sc-mode').val(),
-            executor: $(this).find('.sc-executor').val().trim() || null
+            executor: $(this).find('.sc-executor').val().trim() || null,
+            verifySql: $(this).find('.sc-verify').val().trim() || null
         });
     });
     return configs;
@@ -447,7 +453,7 @@ function doScan() {
         // 扫描结果生成可编辑步骤行（步骤号默认 = 目录名数字，可调整执行顺序）
         $('#stepConfigRows').empty();
         list.forEach(function (s) {
-            addStepRow(s.stepNo, s.connKey, s.afterMode, s.executor, s.dirName);
+            addStepRow(s.stepNo, s.connKey, s.afterMode, s.executor, s.dirName, s.verifySql);
         });
         const rows = list.map(function (s) {
             return '<tr><td class="mono">' + App.escapeHtml(s.dirName) + '</td>' +

@@ -100,35 +100,38 @@ window.App = {
     },
 
     bindOperator() {
-        const $input = $('#operatorInput');
-        $input.val(App.operator);
-        let timer = null;
-        const commit = function () {
-            clearTimeout(timer);
-            const v = $input.val().trim() || 'admin';
-            if (v !== App.operator) {
-                App.operator = v;
-                localStorage.setItem('operator', App.operator);
-                App.toast(I18N.t('toast.operatorSwitched', { name: App.operator }));
-            }
-        };
-        // input 事件即时生效（防抖），Enter 立即提交；change 兜底
-        $input.on('input', function () {
-            clearTimeout(timer);
-            timer = setTimeout(commit, 400);
+        // 登录态下右上角不再提供手工输入，显示当前用户 + 登出按钮；
+        // 用户名取 localStorage.operator（登录页写入），仍作为 X-Operator 头发送
+        const $user = $('#navUser');
+        if ($user.length) {
+            $user.text(App.operator);
+        }
+        $('#logoutBtn').on('click', App.logout);
+    },
+
+    /** 登出：吊销服务端 Token 并回登录页 */
+    logout() {
+        $.post('/api/auth/logout').always(function () {
+            localStorage.setItem('operator', '');
+            location.replace('/login.html');
         });
-        $input.on('keydown', function (e) {
-            if (e.key === 'Enter') {
-                commit();
-                $input.blur();
-            }
-        });
-        $input.on('change', commit);
+    },
+
+    /** 未登录/会话过期：跳登录页并携带来源地址 */
+    redirectToLogin() {
+        if (location.pathname.indexOf('/login') === 0) return;
+        const next = encodeURIComponent(location.pathname + location.search);
+        location.replace('/login.html?next=' + next);
     }
 };
 
 // 全局兜底：HTTP 层错误（4xx/5xx）统一 toast
 $(document).ajaxError(function (event, xhr) {
+    // 401 = 未登录或 Token 过期，回登录页（登录页自身的失败提示由 login.js 处理）
+    if (xhr && xhr.status === 401) {
+        App.redirectToLogin();
+        return;
+    }
     if (xhr && xhr.responseJSON && xhr.responseJSON.code) return; // 业务错误已在 App.api 内提示
     let msg = 'HTTP ' + (xhr && xhr.status ? xhr.status : 'error');
     try {

@@ -23,6 +23,8 @@ public class ReleaseStep {
     private String retryRemark;
     /** start 时脚本内容 SHA-256（用于变更检测）。 */
     private String scriptHash;
+    /** P0：COMMIT 前在事务内执行的只读验证 SQL（返回至少一行才允许提交，否则回滚）。 */
+    private String verifySql;
     /** 详情接口填充：当前目录哈希与 script_hash 是否不一致（不落库）。 */
     private Boolean scriptChanged;
     private LocalDateTime startedAt;

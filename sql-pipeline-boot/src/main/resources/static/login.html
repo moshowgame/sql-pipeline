@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <title>Sign in - sql-pipeline</title>
+    <link rel="stylesheet" href="/lib/bootstrap-5.2.3/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/css/app.css">
+    <style>
+        body { background: #f5f6f8; }
+        .login-card { max-width: 380px; margin: 12vh auto 0; }
+        .brand { font-size: 1.4rem; text-align: center; margin-bottom: .25rem; }
+    </style>
+</head>
+<body>
+<div class="login-card card shadow-sm">
+    <div class="card-body p-4">
+        <div class="brand">⇄ sql-pipeline</div>
+        <p class="text-center text-muted mb-4" data-i18n="login.subtitle">Please sign in</p>
+        <form id="loginForm" autocomplete="off">
+            <div class="mb-3">
+                <label class="form-label" for="username" data-i18n="login.username">Username</label>
+                <input id="username" name="username" class="form-control" required autofocus>
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="password" data-i18n="login.password">Password</label>
+                <input id="password" name="password" type="password" class="form-control" required>
+            </div>
+            <button type="submit" id="submitBtn" class="btn btn-primary w-100" data-i18n="login.submit">Sign in</button>
+        </form>
+    </div>
+</div>
+
+<script src="/lib/jquery/jquery-3.7.1.min.js"></script>
+<script src="/lib/bootstrap-5.2.3/js/bootstrap.bundle.min.js"></script>
+<script src="/js/i18n.js"></script>
+<script src="/js/common.js"></script>
+<script src="/js/login.js"></script>
+</body>
+</html>
