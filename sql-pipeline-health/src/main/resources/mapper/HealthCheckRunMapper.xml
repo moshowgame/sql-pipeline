@@ -19,6 +19,14 @@
         WHERE id = #{id}
     </update>
 
+    <update id="markInterruptedRunning">
+        UPDATE health_check_run
+        SET status      = 'ERROR',
+            finished_at = now(),
+            error_msg   = #{errorMsg,jdbcType=VARCHAR}
+        WHERE status = 'RUNNING'
+    </update>
+
     <select id="pageByDefId" resultType="com.sqlpipeline.health.entity.HealthCheckRun">
         SELECT t.*, count(*) OVER () AS total_count
         FROM (

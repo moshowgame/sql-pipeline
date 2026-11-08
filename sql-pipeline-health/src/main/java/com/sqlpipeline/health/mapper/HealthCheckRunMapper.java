@@ -13,6 +13,9 @@ public interface HealthCheckRunMapper {
 
     int updateResult(HealthCheckRun entity);
 
+    /** 启动恢复：残留的 RUNNING 记录置 ERROR（应用重启中断），返回受影响行数。 */
+    int markInterruptedRunning(@Param("errorMsg") String errorMsg);
+
     List<HealthCheckRun> pageByDefId(@Param("sqlDefId") Long sqlDefId,
                                      @Param("day") String day,
                                      @Param("limit") int limit,

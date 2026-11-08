@@ -33,7 +33,9 @@ import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.MessageSource;
+import org.springframework.context.event.EventListener;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.scheduling.support.CronTrigger;
 import org.springframework.stereotype.Service;
@@ -43,6 +45,8 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.springframework.util.StringUtils.hasText;
 
@@ -75,6 +79,9 @@ public class HealthCheckService {
     // 通过 ObjectProvider 延迟获取，打破 scheduler ↔ service 的构造期循环依赖
     private final ObjectProvider<HealthCheckScheduler> schedulerProvider;
     private final ObjectProvider<MeterRegistry> meterRegistry;
+
+    /** 同一 defId 防重入标记：执行中的检查拒绝并发触发（CRON 跳过 / MANUAL 提示），单实例内存态。 */
+    private final Set<Long> runningDefs = ConcurrentHashMap.newKeySet();
 
     /** keyed 异常按当前 locale 渲染（与 GlobalExceptionHandler 一致）。 */
     private String resolveMsg(BizException e) {
@@ -161,8 +168,19 @@ public class HealthCheckService {
         return run(defId, triggerType, paramOverride, null);
     }
 
-    /** headRows 仅对 MANUAL 生效（结果网格展示），定时执行保持小摘要。 */
+    /** headRows 仅对 MANUAL 生效（结果网格展示），定时执行保持小摘要。防重入：同 defId 执行中拒绝并发触发。 */
     public HealthCheckRun run(Long defId, String triggerType, Map<String, Object> paramOverride, Integer headRows) {
+        if (!runningDefs.add(defId)) {
+            throw BizException.i18n(ErrorCode.HC_DEF_RUNNING, "error.hc.defRunning", defId);
+        }
+        try {
+            return doRun(defId, triggerType, paramOverride, headRows);
+        } finally {
+            runningDefs.remove(defId);
+        }
+    }
+
+    private HealthCheckRun doRun(Long defId, String triggerType, Map<String, Object> paramOverride, Integer headRows) {
         SqlDefinition def = requireExists(defId);
         DbConnection conn = connectionMapper.selectByKey(def.getConnKey());
         if (conn == null) {
@@ -248,6 +266,27 @@ public class HealthCheckService {
     }
 
     // ---------- 内部 ----------
+
+    /** keyed 文案按当前 locale 渲染（无参数场景）。 */
+    private String msg(String key) {
+        return messageSource.getMessage(key, null, key, LocaleContextHolder.getLocale());
+    }
+
+    /**
+     * 启动恢复：应用重启后残留的 RUNNING 记录置 ERROR（执行被中断，与发布模块恢复语义一致）。
+     * 注意：恢复先于任何新一次调度执行完成（调度注册后首次触发通常晚于 ApplicationReady）。
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void recoverInterruptedRuns() {
+        try {
+            int n = runMapper.markInterruptedRunning(msg("error.hc.interruptedWarning"));
+            if (n > 0) {
+                log.warn("启动恢复: {} 条 RUNNING 健康检查记录置 ERROR", n);
+            }
+        } catch (Exception e) {
+            log.error("健康检查启动恢复失败", e);
+        }
+    }
 
     private void validate(SqlDefinition def, boolean isCreate) {
         if (connectionMapper.selectByKey(def.getConnKey()) == null) {

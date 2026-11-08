@@ -1,5 +1,7 @@
 package com.sqlpipeline.health.scheduler;
 
+import com.sqlpipeline.common.error.ErrorCode;
+import com.sqlpipeline.common.exception.BizException;
 import com.sqlpipeline.health.entity.SqlDefinition;
 import com.sqlpipeline.health.enums.TriggerType;
 import com.sqlpipeline.health.mapper.SqlDefinitionMapper;
@@ -7,6 +9,7 @@ import com.sqlpipeline.health.service.HealthCheckService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.scheduling.support.CronTrigger;
 import org.springframework.stereotype.Component;
@@ -26,6 +29,7 @@ import static org.springframework.util.StringUtils.hasText;
 public class HealthCheckScheduler {
 
     private final ThreadPoolTaskScheduler taskScheduler;
+    private final ThreadPoolTaskExecutor hcExecutor;
     private final HealthCheckService healthCheckService;
     private final SqlDefinitionMapper defMapper;
     private final Map<Long, ScheduledFuture<?>> futures = new ConcurrentHashMap<>();
@@ -63,11 +67,21 @@ public class HealthCheckScheduler {
         }
     }
 
+    /** 调度线程只负责触发：实际查询提交到独立执行池（hc-exec-），不挤占调度池。 */
     private void executeQuietly(Long defId) {
-        try {
-            healthCheckService.run(defId, TriggerType.CRON.name(), null);
-        } catch (Exception e) {
-            log.warn("定时健康检查失败: id={}, err={}", defId, e.getMessage());
-        }
+        hcExecutor.execute(() -> {
+            try {
+                healthCheckService.run(defId, TriggerType.CRON.name(), null);
+            } catch (BizException e) {
+                if (e.getErrorCode() == ErrorCode.HC_DEF_RUNNING) {
+                    // 防重入：上一次检查仍在执行，本次静默跳过（信息级日志）
+                    log.info("上一次健康检查仍在执行，本次定时触发跳过: id={}", defId);
+                    return;
+                }
+                log.warn("定时健康检查失败: id={}, err={}", defId, e.getMessage());
+            } catch (Exception e) {
+                log.warn("定时健康检查失败: id={}, err={}", defId, e.getMessage());
+            }
+        });
     }
 }

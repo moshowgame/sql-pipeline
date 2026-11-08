@@ -24,6 +24,7 @@ public enum ErrorCode {
     HC_DEF_NOT_FOUND("HC0001", 404, "健康检查定义不存在"),
     HC_CONFIG_INVALID("HC0002", 400, "断言/参数配置非法"),
     HC_CRON_INVALID("HC0003", 400, "Cron 表达式非法"),
+    HC_DEF_RUNNING("HC0004", 409, "健康检查正在执行中"),
     HC_SQL_TIMEOUT("HC0100", 504, "SQL 执行超时"),
     HC_SQL_ERROR("HC0101", 500, "SQL 执行失败"),
 
