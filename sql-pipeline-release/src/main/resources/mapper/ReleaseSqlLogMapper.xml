@@ -16,6 +16,21 @@
         <if test="runSeq != null">
             AND run_seq = #{runSeq}
         </if>
+        <if test="status != null and status != ''">
+            AND status = #{status}
+        </if>
         ORDER BY id
+    </select>
+
+    <!-- 大批量脚本场景：每个步骤的语句总数 / 失败数（只看最新一轮，避免重跑重复计数） -->
+    <select id="selectStepStats" resultType="map">
+        SELECT step_no AS "stepNo",
+               count(*) AS "total",
+               count(*) FILTER (WHERE status = 'FAIL') AS "failCount"
+        FROM release_sql_log
+        WHERE plan_id = #{planId}
+          AND run_seq = (SELECT max(run_seq) FROM release_sql_log WHERE plan_id = #{planId})
+        GROUP BY step_no
+        ORDER BY step_no
     </select>
 </mapper>

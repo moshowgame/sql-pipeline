@@ -193,6 +193,10 @@
                     <select id="logsStepFilter" class="form-select form-select-sm d-inline-block" style="width:160px" onchange="loadLogs()">
                         <option value="" data-i18n="rel.logsModal.allSteps">All steps</option>
                     </select>
+                    <select id="logsStatusFilter" class="form-select form-select-sm d-inline-block" style="width:110px" onchange="loadLogs()">
+                        <option value="" data-i18n="rel.logs.allStatus">All statuses</option>
+                        <option value="FAIL" data-i18n="rel.logs.failOnly">Failed only</option>
+                    </select>
                 </div>
                 <button type="button" class="btn-close ms-auto" data-bs-dismiss="modal"></button>
             </div>
@@ -212,6 +216,7 @@
                     </thead>
                     <tbody id="logsTable"></tbody>
                 </table>
+                <div id="logsPager" class="d-flex align-items-center gap-2 mt-2"></div>
             </div>
         </div>
     </div>

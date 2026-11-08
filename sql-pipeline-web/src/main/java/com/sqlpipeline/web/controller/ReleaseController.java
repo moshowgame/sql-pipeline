@@ -114,8 +114,15 @@ public class ReleaseController {
 
     @GetMapping("/{id}/logs")
     public R<List<ReleaseSqlLog>> logs(@PathVariable Long id, @RequestParam(required = false) Integer stepNo,
-                                       @RequestParam(required = false) Integer runSeq) {
-        return R.ok(orchestrator.logs(id, stepNo, runSeq));
+                                       @RequestParam(required = false) Integer runSeq,
+                                       @RequestParam(required = false) String status) {
+        return R.ok(orchestrator.logs(id, stepNo, runSeq, status));
+    }
+
+    /** 各步骤语句总数/失败数（最新一轮）：Pipeline 节点展示失败率。 */
+    @GetMapping("/{id}/logs/stats")
+    public R<List<Map<String, Object>>> logStats(@PathVariable Long id) {
+        return R.ok(orchestrator.logStepStats(id));
     }
 
     @GetMapping("/{id}/summaries")

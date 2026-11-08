@@ -5,6 +5,7 @@ let currentPlanId = null;
 let currentSteps = [];
 let sseSource = null;
 let sseDebounce = null;
+let currentLogStats = {}; // stepNo -> {stepNo, total, failCount}（最新一轮语句统计）
 
 $(function () {
     App.bindOperator();
@@ -60,6 +61,12 @@ function loadDetail(planId, keepScroll) {
         $('#detailCard').removeClass('d-none');
         subscribeSse(planId);
         if (keepScroll) $(window).scrollTop(scrollTop);
+        // 各步骤语句总数/失败数（最新一轮）：驱动 Pipeline 节点失败率与弹窗概览条
+        App.api('GET', '/api/releases/' + planId + '/logs/stats').then(function (st) {
+            currentLogStats = {};
+            (st || []).forEach(function (r) { currentLogStats[r.stepNo] = r; });
+            renderPipeline();
+        });
     });
 }
 
@@ -163,6 +170,10 @@ function renderProgress() {
 
 function nodeHtml(s) {
     const meta = [App.fmtMs(s.durationMs), '↻ ' + (s.retryCount || 0)];
+    const stat = currentLogStats[s.stepNo];
+    if (stat && stat.failCount > 0) {
+        meta.push('<span class="text-danger fw-bold">✗ ' + stat.failCount + '/' + stat.total + '</span>');
+    }
     if (s.executor) {
         meta.push('👤 ' + App.escapeHtml(s.executor));
     }
@@ -229,32 +240,129 @@ function openStepResult(stepNo) {
         html += '<button class="btn btn-warning text-dark btn-sm mb-3" onclick="confirmFromModal()">' + App.escapeHtml(I18N.t('rel.pl.confirmContinue')) + '</button>';
     }
     html += '<div class="fw-bold small mb-1 mt-2">' + I18N.t('rel.pl.logs') + '</div>' +
+        '<div id="failBar"></div>' +
+        '<ul class="nav nav-tabs mb-2" style="font-size:.85rem">' +
+        '<li class="nav-item"><button id="tabFail" class="nav-link py-1 px-2" onclick="showStepLogs(' + stepNo + ',\'fail\')"></button></li>' +
+        '<li class="nav-item"><button id="tabAll" class="nav-link py-1 px-2" onclick="showStepLogs(' + stepNo + ',\'all\')"></button></li>' +
+        '</ul>' +
         '<div id="stepLogsBody"><span class="text-muted small">' + App.escapeHtml(I18N.t('common.loading')) + '</span></div>';
     $('#stepResultBody').html(html);
     new bootstrap.Modal('#stepResultModal').show();
-    App.api('GET', '/api/releases/' + currentPlanId + '/logs?stepNo=' + stepNo).then(function (logs) {
-        const all = logs || [];
-        const cap = 100;
-        const shown = all.slice(0, cap);
-        const lrows = shown.map(function (l) {
-            return '<tr>' +
-                '<td class="mono">' + l.seq + '</td>' +
-                '<td class="mono sql-cell" style="max-width:130px">' + App.escapeHtml(l.fileName) + '</td>' +
-                '<td class="sql-text" style="max-width:300px">' + App.escapeHtml(l.sqlPreview) + '</td>' +
-                '<td>' + (l.status === 'SUCCESS' ? App.badge('SUCCESS', 'success') : App.badge('FAIL', 'danger')) + '</td>' +
-                '<td class="mono">' + App.fmtMs(l.durationMs) + '</td>' +
-                '<td class="sql-cell" style="max-width:140px" title="' + App.escapeHtml(l.errorMsg || '') + '">' + App.escapeHtml(l.errorMsg || '-') + '</td></tr>';
-        });
-        $('#stepLogsBody').html(
-            '<table class="table table-sm table-bordered pl-mini-table mb-0"><thead class="table-light"><tr>' +
-            '<th>#</th><th data-i18n="rel.logs.col.file">File</th><th>SQL</th>' +
-            '<th data-i18n="rel.logs.col.status">Status</th><th data-i18n="common.duration">Duration</th>' +
-            '<th data-i18n="common.error">Error</th></tr></thead><tbody>' +
-            (lrows.length ? lrows.join('') :
-                '<tr><td colspan="6" class="text-center text-muted py-2">' + App.escapeHtml(I18N.t('rel.logsModal.empty')) + '</td></tr>') +
-            '</tbody></table>' +
-            (all.length > cap ? '<div class="text-muted small mt-1">' + App.escapeHtml(I18N.t('rel.pl.logsCapped', { n: cap, total: all.length })) + '</div>' : ''));
+    showStepLogs(stepNo, 'fail');
+}
+
+// ---------- 步骤日志视图：失败优先 + 按错误指纹聚合 + 分页（大批量脚本不拥挤） ----------
+
+const LOG_PAGE_SIZE = 50;
+let stepLogPage = 1;
+let stepLogAllRows = [];
+
+function trunc(s, n) {
+    s = s || '';
+    return s.length > n ? s.slice(0, n) + '…' : s;
+}
+
+function renderStepLogTabs(failN, allN) {
+    $('#tabFail').text(I18N.t('rel.pl.failTab', { n: failN == null ? 0 : failN }));
+    $('#tabAll').text(I18N.t('rel.pl.allTab', { n: allN == null ? '-' : allN }));
+}
+
+function showStepLogs(stepNo, mode) {
+    $('#tabFail').toggleClass('active', mode === 'fail');
+    $('#tabAll').toggleClass('active', mode === 'all');
+    stepLogPage = 1;
+    if (mode === 'fail') {
+        App.api('GET', '/api/releases/' + currentPlanId + '/logs?stepNo=' + stepNo + '&status=FAIL')
+            .then(function (rows) { renderFailView(stepNo, rows || []); });
+    } else {
+        App.api('GET', '/api/releases/' + currentPlanId + '/logs?stepNo=' + stepNo)
+            .then(function (rows) {
+                stepLogAllRows = rows || [];
+                renderStepLogTabs(currentLogStats[stepNo] ? currentLogStats[stepNo].failCount : null, stepLogAllRows.length);
+                gotoStepLogPage(1);
+            });
+    }
+}
+
+/** 失败视图：按错误指纹（errorMsg）聚合为折叠组，每组只列文件清单，400 条失败不再平铺。 */
+function renderFailView(stepNo, failRows) {
+    const stat = currentLogStats[stepNo];
+    if (!failRows.length) {
+        renderStepLogTabs(0, stat ? stat.total : null);
+        $('#failBar').empty();
+        $('#stepLogsBody').html('<div class="text-success small py-2">✓ ' + App.escapeHtml(I18N.t('rel.logsModal.empty')) + '</div>');
+        return;
+    }
+    // 按错误指纹分组（同组通常是同一根因），组内按文件列出
+    const groups = [];
+    const map = {};
+    failRows.forEach(function (l) {
+        const key = l.errorMsg || '-';
+        if (!map[key]) { map[key] = { msg: key, rows: [] }; groups.push(map[key]); }
+        map[key].rows.push(l);
     });
+    groups.sort((a, b) => b.rows.length - a.rows.length);
+    renderStepLogTabs(failRows.length, stat ? stat.total : null);
+    $('#failBar').html('<span class="badge bg-danger me-2 py-1">' + App.escapeHtml(
+        I18N.t('rel.pl.failBar', { fail: failRows.length, total: stat ? stat.total : '-', groups: groups.length })) + '</span>');
+    const GROUP_ROWS = 20;
+    const acc = '<div class="accordion accordion-flush" id="failGroups">' + groups.map(function (g, i) {
+        const open = i === 0;
+        const items = g.rows.slice(0, GROUP_ROWS).map(function (l) {
+            return '<tr><td class="mono sql-cell" style="max-width:220px" title="' + App.escapeHtml(l.fileName) + '">' + App.escapeHtml(l.fileName) + '</td>' +
+                '<td class="mono">' + l.seq + '</td>' +
+                '<td class="mono">' + App.fmtMs(l.durationMs) + '</td></tr>';
+        }).join('') +
+            (g.rows.length > GROUP_ROWS ? '<tr><td colspan="3" class="text-muted small">' +
+                App.escapeHtml(I18N.t('rel.pl.groupMore', { n: g.rows.length - GROUP_ROWS })) + '</td></tr>' : '');
+        return '<div class="accordion-item">' +
+            '<h2 class="accordion-header"><button class="accordion-button' + (open ? '' : ' collapsed') + ' py-1 px-2" type="button" data-bs-toggle="collapse" data-bs-target="#fg' + stepNo + '-' + i + '">' +
+            '<span class="badge bg-danger me-2 flex-shrink-0">×' + g.rows.length + '</span>' +
+            '<span class="sql-text text-truncate" title="' + App.escapeHtml(g.msg) + '">' + App.escapeHtml(trunc(g.msg, 200)) + '</span></button></h2>' +
+            '<div id="fg' + stepNo + '-' + i + '" class="accordion-collapse collapse' + (open ? ' show' : '') + '"><div class="accordion-body py-1 px-2">' +
+            '<table class="table table-sm table-bordered mb-0 pl-mini-table"><thead class="table-light"><tr>' +
+            '<th data-i18n="rel.logs.col.file">File</th><th>#</th><th data-i18n="common.duration">Duration</th></tr></thead><tbody>' +
+            items + '</tbody></table></div></div></div>';
+    }).join('') + '</div>';
+    $('#stepLogsBody').html(acc);
+}
+
+function gotoStepLogPage(p) {
+    stepLogPage = p;
+    const all = stepLogAllRows;
+    const pages = Math.max(1, Math.ceil(all.length / LOG_PAGE_SIZE));
+    if (stepLogPage > pages) stepLogPage = pages;
+    const from = (stepLogPage - 1) * LOG_PAGE_SIZE;
+    const shown = all.slice(from, from + LOG_PAGE_SIZE);
+    const lrows = shown.map(function (l) {
+        return '<tr>' +
+            '<td class="mono">' + l.seq + '</td>' +
+            '<td class="mono sql-cell" style="max-width:130px">' + App.escapeHtml(l.fileName) + '</td>' +
+            '<td class="sql-text" style="max-width:300px">' + App.escapeHtml(l.sqlPreview) + '</td>' +
+            '<td>' + (l.status === 'SUCCESS' ? App.badge('SUCCESS', 'success') : App.badge('FAIL', 'danger')) + '</td>' +
+            '<td class="mono">' + App.fmtMs(l.durationMs) + '</td>' +
+            '<td class="sql-cell" style="max-width:140px" title="' + App.escapeHtml(l.errorMsg || '') + '">' + App.escapeHtml(trunc(l.errorMsg || '-', 60)) + '</td></tr>';
+    });
+    $('#stepLogsBody').html(
+        '<table class="table table-sm table-bordered pl-mini-table mb-0"><thead class="table-light"><tr>' +
+        '<th>#</th><th data-i18n="rel.logs.col.file">File</th><th>SQL</th>' +
+        '<th data-i18n="rel.logs.col.status">Status</th><th data-i18n="common.duration">Duration</th>' +
+        '<th data-i18n="common.error">Error</th></tr></thead><tbody>' +
+        (lrows.length ? lrows.join('') :
+            '<tr><td colspan="6" class="text-center text-muted py-2">' + App.escapeHtml(I18N.t('rel.logsModal.empty')) + '</td></tr>') +
+        '</tbody></table>' +
+        pagerHtml(stepLogPage, pages,
+            'gotoStepLogPage(' + (stepLogPage - 1) + ')', 'gotoStepLogPage(' + (stepLogPage + 1) + ')',
+            from + 1, from + shown.length, all.length));
+}
+
+/** 通用分页条：仅在 total > 单页容量时出现。 */
+function pagerHtml(page, pages, prevFn, nextFn, from, to, total) {
+    if (total <= LOG_PAGE_SIZE) return '';
+    return '<div class="d-flex align-items-center gap-2 mt-2">' +
+        '<button class="btn btn-outline-secondary btn-sm py-0 px-2"' + (page <= 1 ? ' disabled' : '') + ' onclick="' + prevFn + '">' + App.escapeHtml(I18N.t('hc.runs.prev')) + '</button>' +
+        '<span class="small text-muted">' + App.escapeHtml(I18N.t('rel.pl.pageInfo', { from: from, to: to, total: total })) + '</span>' +
+        '<button class="btn btn-outline-secondary btn-sm py-0 px-2"' + (page >= pages ? ' disabled' : '') + ' onclick="' + nextFn + '">' + App.escapeHtml(I18N.t('hc.runs.next')) + '</button></div>';
 }
 
 function retryFromModal(stepNo) {
@@ -558,32 +666,53 @@ function openLogs() {
         $runFilter.append('<option value="' + i + '">' + I18N.t('rel.summary.round', { n: i }) + '</option>');
     }
     $runFilter.val('');
+    $('#logsStatusFilter').val('');
+    $('#logsPager').empty();
     $('#logsTable').html('<tr><td colspan="8" class="text-center text-muted py-3">' + App.escapeHtml(I18N.t('common.loading')) + '</td></tr>');
     new bootstrap.Modal('#logsModal').show();
     loadLogs();
 }
 
+let planLogsCache = [];
+let planLogsPage = 1;
+
 function loadLogs() {
     const stepNo = $('#logsStepFilter').val();
     const runSeq = $('#logsRunFilter').val();
+    const status = $('#logsStatusFilter').val();
     const params = [];
     if (stepNo) params.push('stepNo=' + stepNo);
     if (runSeq) params.push('runSeq=' + runSeq);
+    if (status) params.push('status=' + status);
     const url = '/api/releases/' + currentPlanId + '/logs' + (params.length ? '?' + params.join('&') : '');
     App.api('GET', url).then(function (logs) {
-        const rows = (logs || []).map(function (l) {
-            return '<tr><td class="mono">' + l.seq + '</td>' +
-                '<td class="mono">' + (l.runSeq || '-') + '</td>' +
-                '<td class="mono">' + (l.stepNo || '-') + '</td>' +
-                '<td class="mono sql-cell" style="max-width:160px">' + App.escapeHtml(l.fileName) + '</td>' +
-                '<td class="sql-text" style="max-width:380px">' + App.escapeHtml(l.sqlPreview) + '</td>' +
-                '<td>' + (l.status === 'SUCCESS' ? App.badge('SUCCESS', 'success') : App.badge('FAIL', 'danger')) + '</td>' +
-                '<td class="mono">' + App.fmtMs(l.durationMs) + '</td>' +
-                '<td class="sql-cell" style="max-width:180px" title="' + App.escapeHtml(l.errorMsg || '') + '">' + App.escapeHtml(l.errorMsg || '-') + '</td></tr>';
-        });
-        $('#logsTable').html(rows.length ? rows.join('') :
-            '<tr><td colspan="8" class="text-center text-muted py-3">' + App.escapeHtml(I18N.t('rel.logsModal.empty')) + '</td></tr>');
+        planLogsCache = logs || [];
+        gotoPlanLogsPage(1);
     });
+}
+
+function gotoPlanLogsPage(p) {
+    planLogsPage = p;
+    const all = planLogsCache;
+    const pages = Math.max(1, Math.ceil(all.length / LOG_PAGE_SIZE));
+    if (planLogsPage > pages) planLogsPage = pages;
+    const from = (planLogsPage - 1) * LOG_PAGE_SIZE;
+    const shown = all.slice(from, from + LOG_PAGE_SIZE);
+    const rows = shown.map(function (l) {
+        return '<tr><td class="mono">' + l.seq + '</td>' +
+            '<td class="mono">' + (l.runSeq || '-') + '</td>' +
+            '<td class="mono">' + (l.stepNo || '-') + '</td>' +
+            '<td class="mono sql-cell" style="max-width:160px">' + App.escapeHtml(l.fileName) + '</td>' +
+            '<td class="sql-text" style="max-width:380px">' + App.escapeHtml(l.sqlPreview) + '</td>' +
+            '<td>' + (l.status === 'SUCCESS' ? App.badge('SUCCESS', 'success') : App.badge('FAIL', 'danger')) + '</td>' +
+            '<td class="mono">' + App.fmtMs(l.durationMs) + '</td>' +
+            '<td class="sql-cell" style="max-width:180px" title="' + App.escapeHtml(l.errorMsg || '') + '">' + App.escapeHtml(trunc(l.errorMsg || '-', 80)) + '</td></tr>';
+    });
+    $('#logsTable').html(rows.length ? rows.join('') :
+        '<tr><td colspan="8" class="text-center text-muted py-3">' + App.escapeHtml(I18N.t('rel.logsModal.empty')) + '</td></tr>');
+    $('#logsPager').html(pagerHtml(planLogsPage, pages,
+        'gotoPlanLogsPage(' + (planLogsPage - 1) + ')', 'gotoPlanLogsPage(' + (planLogsPage + 1) + ')',
+        from + 1, from + shown.length, all.length));
 }
 
 function openSummaries() {

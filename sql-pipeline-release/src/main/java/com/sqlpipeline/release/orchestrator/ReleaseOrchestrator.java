@@ -311,9 +311,15 @@ public class ReleaseOrchestrator {
         return configs == null ? List.of() : configs;
     }
 
-    public List<ReleaseSqlLog> logs(Long planId, Integer stepNo, Integer runSeq) {
+    public List<ReleaseSqlLog> logs(Long planId, Integer stepNo, Integer runSeq, String status) {
         requirePlan(planId);
-        return sqlLogMapper.selectByPlan(planId, stepNo, runSeq);
+        return sqlLogMapper.selectByPlan(planId, stepNo, runSeq, status);
+    }
+
+    /** 各步骤语句总数/失败数（最新一轮）：大批量脚本场景的失败率展示。 */
+    public List<Map<String, Object>> logStepStats(Long planId) {
+        requirePlan(planId);
+        return sqlLogMapper.selectStepStats(planId);
     }
 
     public List<ReleaseRunSummary> summaries(Long planId) {
