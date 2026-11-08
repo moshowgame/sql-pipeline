@@ -10,7 +10,8 @@ import java.util.Map;
 @Mapper
 public interface ReleaseSqlLogMapper {
 
-    int insert(ReleaseSqlLog entity);
+    /** 攒批写入：单次 JDBC 往返插入一批语句日志。 */
+    int batchInsert(@Param("rows") List<ReleaseSqlLog> rows);
 
     List<ReleaseSqlLog> selectByPlan(@Param("planId") Long planId,
                                      @Param("stepNo") Integer stepNo,

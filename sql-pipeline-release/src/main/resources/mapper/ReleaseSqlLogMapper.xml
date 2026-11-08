@@ -2,9 +2,13 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.sqlpipeline.release.mapper.ReleaseSqlLogMapper">
 
-    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+    <!-- 攒批写入：多行 VALUES 单次往返（风格与 ReleaseStepMapper.batchInsert 一致） -->
+    <insert id="batchInsert">
         INSERT INTO release_sql_log (plan_id, step_id, step_no, run_seq, operator, file_name, seq, sql_preview, status, duration_ms, error_msg, executed_at)
-        VALUES (#{planId}, #{stepId}, #{stepNo}, #{runSeq}, #{operator}, #{fileName}, #{seq}, #{sqlPreview}, #{status}, #{durationMs}, #{errorMsg,jdbcType=VARCHAR}, now())
+        VALUES
+        <foreach collection="rows" item="r" separator=",">
+            (#{r.planId}, #{r.stepId}, #{r.stepNo}, #{r.runSeq}, #{r.operator}, #{r.fileName}, #{r.seq}, #{r.sqlPreview}, #{r.status}, #{r.durationMs}, #{r.errorMsg,jdbcType=VARCHAR}, now())
+        </foreach>
     </insert>
 
     <select id="selectByPlan" resultType="com.sqlpipeline.release.entity.ReleaseSqlLog">

@@ -83,6 +83,8 @@ public class ReleaseOrchestrator {
     private static final Pattern CONCURRENTLY = Pattern.compile("(?i)\\bCONCURRENTLY\\b");
     /** verify_sql 写入 release_sql_log 时使用的虚拟文件名（P0 提交前验证卡点）。 */
     private static final String VERIFY_LOG_NAME = "(verify_sql)";
+    /** SQL 明细日志攒批阈值：缓冲达到该条数即批量落库（减少元库往返，优化方向 §7.3）。 */
+    private static final int SQL_LOG_BATCH_SIZE = 200;
     private static final TypeReference<List<StepConfig>> STEP_CONFIG_LIST = new TypeReference<>() {
     };
 
@@ -542,6 +544,8 @@ public class ReleaseOrchestrator {
     /** 单步执行：一个数字目录 = 一个事务（ADR-05）；目录含 _nontransactional 标记时逐条自动提交。调用方需持 planId 锁。 */
     private void runStep(ReleaseStep step) {
         long t0 = System.currentTimeMillis();
+        // 本步骤的日志缓冲（runStep 可能多计划并发，缓冲必须为方法局部变量）
+        List<ReleaseSqlLog> sqlLogBuffer = new ArrayList<>();
         ReleasePlan plan = planMapper.selectById(step.getPlanId());
         int runSeq = (plan != null && plan.getRerunCount() != null ? plan.getRerunCount() : 0) + 1;
         String operator = plan == null ? null : plan.getOperator();
@@ -568,7 +572,7 @@ public class ReleaseOrchestrator {
         try (Connection conn = registry.get(step.getConnKey()).getConnection()) {
             try {
                 conn.setAutoCommit(nonTx);
-                executeSqlFiles(conn, step, dir, nonTx, deadline, runSeq, operator, dryRun);
+                executeSqlFiles(conn, step, dir, nonTx, deadline, runSeq, operator, dryRun, sqlLogBuffer);
                 if (nonTx) {
                     // 非事务模式数据已逐条提交：verify_sql 即使失败也无法回滚，仅告警跳过
                     if (hasText(step.getVerifySql())) {
@@ -577,7 +581,7 @@ public class ReleaseOrchestrator {
                     }
                 } else {
                     // P0 验证卡点：COMMIT 之前在事务内复核落库结果（只读 SELECT，返回至少一行才放行），失败即整体回滚
-                    executeVerify(conn, step, deadline, runSeq, operator);
+                    executeVerify(conn, step, deadline, runSeq, operator, sqlLogBuffer);
                     if (dryRun) {
                         // Dry-Run 预演：变更 SQL 未执行（仅记录 PLANNED），verify 预检后回滚，不落任何变更
                         conn.rollback();
@@ -585,6 +589,8 @@ public class ReleaseOrchestrator {
                         conn.commit();
                     }
                 }
+                // 步骤落 SUCCESS 前冲刷剩余日志，保证步骤终态与日志可见性一致
+                flushSqlLogs(sqlLogBuffer);
                 stepMapper.markSuccess(step.getId(), System.currentTimeMillis() - t0);
                 publishStep(step, StepStatus.SUCCESS.name());
                 log.info("发布步骤成功: planId={}, stepNo={}, nonTx={}, dryRun={}, durationMs={}",
@@ -595,6 +601,8 @@ public class ReleaseOrchestrator {
                 }
                 String message = (nonTx ? msg("error.rl.nonTxPrefix") : "") + brief(e);
                 stepMapper.markFail(step.getId(), System.currentTimeMillis() - t0, message);
+                // 失败立即冲刷（含 FAIL 行与此前缓冲的成功行），保留排障现场
+                flushSqlLogs(sqlLogBuffer);
                 publishStep(step, StepStatus.FAIL.name());
                 log.warn("发布步骤失败(已{}): planId={}, stepNo={}, err={}",
                         nonTx ? "逐条提交" : "回滚", step.getPlanId(), step.getStepNo(), message);
@@ -602,10 +610,12 @@ public class ReleaseOrchestrator {
         } catch (SQLException | RuntimeException e) {
             // 目标库连接失败：步骤置 FAIL，不自动重试（避免雪崩）
             stepMapper.markFail(step.getId(), System.currentTimeMillis() - t0, brief(e));
+            flushSqlLogs(sqlLogBuffer);
             publishStep(step, StepStatus.FAIL.name());
             log.warn("发布步骤失败(连接失败): planId={}, stepNo={}, err={}",
                     step.getPlanId(), step.getStepNo(), brief(e));
         } finally {
+            flushSqlLogs(sqlLogBuffer); // 兜底冲刷，防止异常路径遗漏
             ReleaseStep after = stepMapper.selectById(step.getId());
             if (after != null) {
                 recordStepMetrics(step.getPlanId(), step.getStepNo(), after.getStatus(), after.getDurationMs());
@@ -631,7 +641,7 @@ public class ReleaseOrchestrator {
 
     private void executeSqlFiles(Connection conn, ReleaseStep step, Path dir,
                                  boolean nonTx, long deadline, Integer runSeq, String operator,
-                                 boolean dryRun) throws SQLException, IOException {
+                                 boolean dryRun, List<ReleaseSqlLog> sqlLogBuffer) throws SQLException, IOException {
         int seq = 0;
         try (Stream<Path> files = Files.list(dir)) {
             List<Path> sqlFiles = files
@@ -646,14 +656,16 @@ public class ReleaseOrchestrator {
                 for (String sql : SqlSplitter.split(content)) {
                     // 语句间检查步骤总超时（运行中语句由自身 queryTimeout 约束）
                     if (deadline > 0 && System.currentTimeMillis() > deadline) {
+                        flushSqlLogs(sqlLogBuffer);
                         throw new SQLException(msg("error.rl.stepTimeout", properties.getStepTotalTimeoutSec()));
                     }
                     // 事务模式下拒绝 CONCURRENTLY 等非事务 DDL（PostgreSQL 限制）；Dry-Run 同样预检以便提前暴露问题
                     if (!nonTx && CONCURRENTLY.matcher(sql).find()) {
+                        flushSqlLogs(sqlLogBuffer);
                         throw new SQLException(msg("error.rl.concurrentlyInTx"));
                     }
                     seq++;
-                    executeSingle(conn, step, file, seq, sql, runSeq, operator, dryRun);
+                    executeSingle(conn, step, file, seq, sql, runSeq, operator, dryRun, sqlLogBuffer);
                 }
             }
         }
@@ -665,7 +677,7 @@ public class ReleaseOrchestrator {
      * 结果记入 release_sql_log（file_name=(verify_sql)），与语句日志同样可追溯。
      */
     private void executeVerify(Connection conn, ReleaseStep step, long deadline,
-                               Integer runSeq, String operator) throws SQLException {
+                               Integer runSeq, String operator, List<ReleaseSqlLog> sqlLogBuffer) throws SQLException {
         String verify = step.getVerifySql();
         if (!hasText(verify)) {
             return;
@@ -685,61 +697,79 @@ public class ReleaseOrchestrator {
                 }
             }
         } catch (SQLException e) {
-            insertSqlLog(step, VERIFY_LOG_NAME, 0, verify, "FAIL",
+            bufferSqlLog(sqlLogBuffer, step, VERIFY_LOG_NAME, 0, verify, "FAIL",
                     System.currentTimeMillis() - t0, e.getMessage(), runSeq, operator);
             throw new SQLException(msg("error.rl.verifyFailed", brief(e)), e);
         }
         if (rows < 1) {
-            insertSqlLog(step, VERIFY_LOG_NAME, 0, verify, "FAIL",
+            bufferSqlLog(sqlLogBuffer, step, VERIFY_LOG_NAME, 0, verify, "FAIL",
                     System.currentTimeMillis() - t0, msg("error.rl.verifyNoRows"), runSeq, operator);
             throw new SQLException(msg("error.rl.verifyNoRows"));
         }
-        insertSqlLog(step, VERIFY_LOG_NAME, 0, verify, "SUCCESS",
+        bufferSqlLog(sqlLogBuffer, step, VERIFY_LOG_NAME, 0, verify, "SUCCESS",
                 System.currentTimeMillis() - t0, null, runSeq, operator);
         log.info("verify_sql 验证通过: planId={}, stepNo={}, rows={}", step.getPlanId(), step.getStepNo(), rows);
     }
 
     private void executeSingle(Connection conn, ReleaseStep step, Path file, int seq, String sql,
-                               Integer runSeq, String operator, boolean dryRun) throws SQLException {
+                               Integer runSeq, String operator, boolean dryRun,
+                               List<ReleaseSqlLog> sqlLogBuffer) throws SQLException {
         long t0 = System.currentTimeMillis();
         if (dryRun) {
             // Dry-Run 预演：不执行变更，仅记录 PLANNED 计划状态供报告/日志追溯
-            insertSqlLog(step, file, seq, sql, "PLANNED", 0L, null, runSeq, operator);
+            bufferSqlLog(sqlLogBuffer, step, file, seq, sql, "PLANNED", 0L, null, runSeq, operator);
             return;
         }
         try (Statement st = conn.createStatement()) {
             st.setQueryTimeout(properties.getStatementTimeoutSec());
             st.execute(sql);
         } catch (SQLException e) {
-            insertSqlLog(step, file, seq, sql, "FAIL", System.currentTimeMillis() - t0, e.getMessage(), runSeq, operator);
+            bufferSqlLog(sqlLogBuffer, step, file, seq, sql, "FAIL",
+                    System.currentTimeMillis() - t0, e.getMessage(), runSeq, operator);
             throw e;
         }
-        insertSqlLog(step, file, seq, sql, "SUCCESS", System.currentTimeMillis() - t0, null, runSeq, operator);
+        bufferSqlLog(sqlLogBuffer, step, file, seq, sql, "SUCCESS",
+                System.currentTimeMillis() - t0, null, runSeq, operator);
     }
 
-    private void insertSqlLog(ReleaseStep step, Path file, int seq, String sql,
+    /** 构建日志行加入缓冲；达到阈值即批量落库，控制内存占用并保留部分进度可见性。 */
+    private void bufferSqlLog(List<ReleaseSqlLog> buffer, ReleaseStep step, Path file, int seq, String sql,
                               String status, long durationMs, String error, Integer runSeq, String operator) {
-        insertSqlLog(step, file.getFileName().toString(), seq, sql, status, durationMs, error, runSeq, operator);
+        bufferSqlLog(buffer, step, file.getFileName().toString(), seq, sql, status, durationMs, error, runSeq, operator);
     }
 
-    private void insertSqlLog(ReleaseStep step, String fileName, int seq, String sql,
+    private void bufferSqlLog(List<ReleaseSqlLog> buffer, ReleaseStep step, String fileName, int seq, String sql,
                               String status, long durationMs, String error, Integer runSeq, String operator) {
+        ReleaseSqlLog logRow = new ReleaseSqlLog();
+        logRow.setPlanId(step.getPlanId());
+        logRow.setStepId(step.getId());
+        logRow.setStepNo(step.getStepNo());
+        logRow.setRunSeq(runSeq);
+        logRow.setOperator(operator);
+        logRow.setFileName(fileName);
+        logRow.setSeq(seq);
+        logRow.setSqlPreview(JsonUtils.truncate(sql, 1000));
+        logRow.setStatus(status);
+        logRow.setDurationMs(durationMs);
+        logRow.setErrorMsg(error == null ? null : JsonUtils.truncate(error, 2000));
+        buffer.add(logRow);
+        if (buffer.size() >= SQL_LOG_BATCH_SIZE) {
+            flushSqlLogs(buffer);
+        }
+    }
+
+    /** 批量落库当前缓冲（单次 JDBC 往返）；失败仅记错误日志，不影响步骤执行（与原逐条写入的容错语义一致）。 */
+    private void flushSqlLogs(List<ReleaseSqlLog> buffer) {
+        if (buffer.isEmpty()) {
+            return;
+        }
+        List<ReleaseSqlLog> rows = new ArrayList<>(buffer);
+        buffer.clear();
         try {
-            ReleaseSqlLog logRow = new ReleaseSqlLog();
-            logRow.setPlanId(step.getPlanId());
-            logRow.setStepId(step.getId());
-            logRow.setStepNo(step.getStepNo());
-            logRow.setRunSeq(runSeq);
-            logRow.setOperator(operator);
-            logRow.setFileName(fileName);
-            logRow.setSeq(seq);
-            logRow.setSqlPreview(JsonUtils.truncate(sql, 1000));
-            logRow.setStatus(status);
-            logRow.setDurationMs(durationMs);
-            logRow.setErrorMsg(error == null ? null : JsonUtils.truncate(error, 2000));
-            sqlLogMapper.insert(logRow);
+            sqlLogMapper.batchInsert(rows);
         } catch (Exception ex) {
-            log.error("SQL 明细日志写入失败: stepId={}, file={}, err={}", step.getId(), fileName, ex.getMessage());
+            log.error("SQL 明细日志批量写入失败: stepId={}, rows={}, err={}",
+                    rows.get(0).getStepId(), rows.size(), ex.getMessage());
         }
     }
 
