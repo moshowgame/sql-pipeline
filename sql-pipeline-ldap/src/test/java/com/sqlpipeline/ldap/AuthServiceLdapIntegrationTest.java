@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -151,5 +152,37 @@ class AuthServiceLdapIntegrationTest {
 
         AuthService service = new AuthService(userStore, passwordEncryptor, tokenManager, provider(directoryAuthenticator));
         assertThat(service.login("alice", "localPass").token()).isEqualTo("token-5");
+    }
+
+    // ---------- 补充用例 ----------
+
+    @Test
+    void tpamExpiredLocalAccount_blocksDirectoryLogin() {
+        UserAccount expired = localUser("ADMIN", 1);
+        expired.setExpiresAt(LocalDateTime.now().minusMinutes(1)); // Self-TPAM 临时账号已过期
+        when(userStore.findByUsername("alice")).thenReturn(Optional.of(expired));
+        when(directoryAuthenticator.authenticate("alice", "dirPass"))
+                .thenReturn(Optional.of(new DirectoryAuthenticator.DirectoryUser("alice", "", "ADMIN")));
+
+        AuthService service = new AuthService(userStore, passwordEncryptor, tokenManager, provider(directoryAuthenticator));
+        assertThatThrownBy(() -> service.login("alice", "dirPass"))
+                .isInstanceOf(BizException.class)
+                .satisfies(e -> assertThat(((BizException) e).getErrorCode()).isEqualTo(ErrorCode.AU_TPAM_EXPIRED));
+        verify(tokenManager, never()).issue(anyString(), anyString());
+    }
+
+    @Test
+    void directoryUserBlankDisplayName_fallsBackToUsername() {
+        when(userStore.findByUsername("bob")).thenReturn(Optional.empty());
+        when(directoryAuthenticator.authenticate("bob", "dirPass"))
+                .thenReturn(Optional.of(new DirectoryAuthenticator.DirectoryUser("bob", "  ", "VIEWER")));
+        when(tokenManager.issue("bob", "VIEWER")).thenReturn("token-6");
+
+        AuthService service = new AuthService(userStore, passwordEncryptor, tokenManager, provider(directoryAuthenticator));
+        service.login("bob", "dirPass");
+
+        ArgumentCaptor<UserAccount> captor = ArgumentCaptor.forClass(UserAccount.class);
+        verify(userStore).createUser(captor.capture());
+        assertThat(captor.getValue().getDisplayName()).isEqualTo("bob"); // 空白 displayName 回退登录名
     }
 }

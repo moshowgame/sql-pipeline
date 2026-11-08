@@ -24,6 +24,7 @@ class LdapAuthenticatorTest {
 
     private static final String BASE_DN = "dc=corp,dc=com";
     private static final String ADMIN_GROUP_DN = "cn=DBA-Admins,ou=groups,dc=corp,dc=com";
+    private static final String OPS_GROUP_DN = "cn=Ops-Leads,ou=groups,dc=corp,dc=com";
 
     private InMemoryDirectoryServer server;
 
@@ -68,6 +69,28 @@ class LdapAuthenticatorTest {
         bob.addAttribute("userPassword", "bobPass");
         bob.addAttribute("displayName", "Bob Li");
         server.add(bob);
+
+        // carol：无 displayName 属性 + memberOf 命中第二个 admin 组（多组映射用例）
+        Entry carol = entry("uid=carol,ou=people," + BASE_DN, "top", "person", "organizationalPerson", "inetOrgPerson");
+        carol.addAttribute("uid", "carol");
+        carol.addAttribute("cn", "Carol Wang");
+        carol.addAttribute("sn", "Wang");
+        carol.addAttribute("userPassword", "carolPass");
+        carol.addAttribute("memberOf", OPS_GROUP_DN);
+        server.add(carol);
+
+        // dave：深层嵌套 OU（子树搜索用例）
+        Entry teams = entry("ou=teams,ou=people," + BASE_DN, "top", "organizationalUnit");
+        teams.addAttribute("ou", "teams");
+        server.add(teams);
+        Entry dave = entry("uid=dave,ou=teams,ou=people," + BASE_DN,
+                "top", "person", "organizationalPerson", "inetOrgPerson");
+        dave.addAttribute("uid", "dave");
+        dave.addAttribute("cn", "Dave Chen");
+        dave.addAttribute("sn", "Chen");
+        dave.addAttribute("displayName", "Dave Chen");
+        dave.addAttribute("userPassword", "davePass");
+        server.add(dave);
 
         Entry svc = entry("uid=svc,ou=service," + BASE_DN, "top", "person", "organizationalPerson", "inetOrgPerson");
         svc.addAttribute("uid", "svc");
@@ -141,6 +164,92 @@ class LdapAuthenticatorTest {
         LdapAuthenticator auth = new LdapAuthenticator(searchProps());
         // RFC 4515 转义后该输入只会精确匹配字面 uid，无法构造 OR 注入
         assertThat(auth.authenticate("*)(uid=*))(|uid=*", "x")).isEmpty();
+    }
+
+    // ---------- 补充：配置与输入短路 ----------
+
+    @Test
+    void missingConfig_returnsEmptyWithoutConnecting() {
+        LdapAuthenticator auth = new LdapAuthenticator(searchProps());
+        assertThat(auth.authenticate("", "pass")).isEmpty();        // 用户名为空
+        assertThat(auth.authenticate("alice", "")).isEmpty();       // 密码为空
+        LdapProperties noUrl = searchProps();
+        noUrl.setUrl("");
+        assertThat(new LdapAuthenticator(noUrl).authenticate("alice", "alicePass")).isEmpty(); // url 为空
+    }
+
+    @Test
+    void searchThenBind_noDisplayName_returnsEmptyDisplayName() {
+        LdapAuthenticator auth = new LdapAuthenticator(searchProps());
+        Optional<DirectoryAuthenticator.DirectoryUser> result = auth.authenticate("carol", "carolPass");
+        assertThat(result).isPresent();
+        assertThat(result.get().displayName()).isEmpty(); // 目录无 displayName 属性
+    }
+
+    @Test
+    void searchThenBind_secondAdminGroupHit_returnsAdminRole() {
+        LdapProperties p = searchProps();
+        p.setAdminGroups(List.of("cn=Not-Exist,ou=groups," + BASE_DN, OPS_GROUP_DN));
+        LdapAuthenticator auth = new LdapAuthenticator(p);
+        Optional<DirectoryAuthenticator.DirectoryUser> result = auth.authenticate("carol", "carolPass");
+        assertThat(result).isPresent();
+        assertThat(result.get().role()).isEqualTo("ADMIN"); // memberOf 命中列表中的第二个组
+    }
+
+    @Test
+    void searchThenBind_deepNestedUser_foundBySubtreeSearch() {
+        LdapAuthenticator auth = new LdapAuthenticator(searchProps());
+        Optional<DirectoryAuthenticator.DirectoryUser> result = auth.authenticate("dave", "davePass");
+        assertThat(result).isPresent(); // SUBTREE_SCOPE 覆盖 ou=teams,ou=people 嵌套层级
+        assertThat(result.get().displayName()).isEqualTo("Dave Chen");
+        assertThat(result.get().role()).isEqualTo("VIEWER");
+    }
+
+    // ---------- 补充：manager 服务账号异常语义 ----------
+
+    @Test
+    void searchThenBind_managerWrongPassword_failOpen_returnsEmpty() {
+        LdapProperties p = searchProps();
+        p.setManagerPassword("wrongSvcPass");
+        LdapAuthenticator auth = new LdapAuthenticator(p);
+        // 服务账号 bind 失败按"服务不可用"处理：默认 fail-open 降级，不抛异常
+        assertThat(auth.authenticate("alice", "alicePass")).isEmpty();
+    }
+
+    @Test
+    void searchThenBind_managerWrongPassword_failClosed_throwsUnavailable() {
+        LdapProperties p = searchProps();
+        p.setManagerPassword("wrongSvcPass");
+        p.setFailClosed(true);
+        LdapAuthenticator auth = new LdapAuthenticator(p);
+        assertThatThrownBy(() -> auth.authenticate("alice", "alicePass"))
+                .isInstanceOf(BizException.class)
+                .satisfies(e -> assertThat(((BizException) e).getErrorCode()).isEqualTo(ErrorCode.AU_LDAP_UNAVAILABLE));
+    }
+
+    // ---------- 补充：direct bind DN 注入 ----------
+
+    @Test
+    void directBind_dnInjection_returnsEmpty() {
+        LdapProperties p = searchProps();
+        p.setManagerDn(null);
+        p.setManagerPassword(null);
+        p.setUserDnPattern("uid={0},ou=people," + BASE_DN);
+        LdapAuthenticator auth = new LdapAuthenticator(p);
+        // RFC 4514 转义后 DN 成为字面 uid，无法构造 DN 注入跳转其他分支
+        assertThat(auth.authenticate("dave,ou=teams,ou=people", "davePass")).isEmpty();
+    }
+
+    // ---------- 补充：StartTLS 分支 ----------
+
+    @Test
+    void startTls_serverNotSupporting_failsOpen_returnsEmpty() {
+        // startTls=true 但目录服务器不支持 StartTLS：negotiate 失败按服务不可用降级（fail-open），不抛异常
+        LdapProperties p = searchProps();
+        p.setStartTls(true);
+        LdapAuthenticator auth = new LdapAuthenticator(p);
+        assertThat(auth.authenticate("alice", "alicePass")).isEmpty();
+        // StartTLS 全链路（TLS 协商 + bind 验密）依赖企业 CA 信任与主机名匹配，属运维前提（见 README），单测不模拟
     }
 
     @Test
