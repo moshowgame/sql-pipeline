@@ -6,6 +6,10 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <title>Health Checks - sql-pipeline</title>
     <link rel="stylesheet" href="/lib/bootstrap-5.2.3/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/lib/codemirror/codemirror.min.css">
+    <link rel="stylesheet" href="/lib/codemirror/theme/material-darker.min.css">
+    <link rel="stylesheet" href="/lib/codemirror/show-hint.min.css">
+    <link rel="stylesheet" href="/lib/codemirror/dialog.min.css">
     <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
@@ -17,6 +21,7 @@
             <li class="nav-item"><a class="nav-link" href="/connections.html" data-i18n="nav.connections">Connections</a></li>
             <li class="nav-item"><a class="nav-link active" href="/health-checks.html" data-i18n="nav.healthChecks">Health Checks</a></li>
             <li class="nav-item"><a class="nav-link" href="/releases.html" data-i18n="nav.releases">Releases</a></li>
+            <li class="nav-item"><a class="nav-link" href="/console.html" data-i18n="nav.console">SQL Console</a></li>
             <li class="nav-item"><a class="nav-link" href="/notify.html" data-i18n="nav.notify">Alerts</a></li>
             <li class="nav-item"><a class="nav-link" href="/tpam.html" data-i18n="nav.tpam">Temp Accounts</a></li>
         </ul>
@@ -87,9 +92,18 @@
                         </select>
                     </div>
                     <div class="col-12">
-                        <label class="form-label" data-i18n="hc.field.sql"></label>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-label mb-1" data-i18n="hc.field.sql"></label>
+                            <div class="btn-group btn-group-sm mb-1">
+                                <button type="button" class="btn btn-outline-success" onclick="runSelectedSql()"
+                                        title="Ctrl+Shift+Enter">▶ <span data-i18n="hc.editor.runSelected">Run</span></button>
+                                <button type="button" class="btn btn-outline-secondary" onclick="toggleSqlTheme()"
+                                        title="Light / dark theme">◐</button>
+                            </div>
+                        </div>
                         <textarea id="dSql" class="form-control form-control-sm sql-text" rows="4"
                                   placeholder="SELECT count(*) AS total FROM t WHERE created_at >= ${date} AND status = ${status}"></textarea>
+                        <div class="form-text" data-i18n="hc.editor.hints"></div>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label" data-i18n="hc.field.params">Default Params (JSON object, optional)</label>
@@ -155,6 +169,11 @@
                 <label class="form-label" data-i18n="hc.runModal.params">Override Params</label>
                 <textarea id="runParamsInput" class="form-control form-control-sm mono" rows="4" placeholder="{}"></textarea>
                 <div class="form-text mt-2" data-i18n="hc.runModal.note"></div>
+                <div class="d-flex align-items-center mt-3">
+                    <label class="form-label mb-0 me-2 small" for="runHeadRows" data-i18n="hc.runModal.headRows">Result preview rows</label>
+                    <input id="runHeadRows" type="number" class="form-control form-control-sm" style="width:110px" value="100" min="1" max="500">
+                    <span class="text-muted small ms-2" data-i18n="hc.runModal.headRowsHint">1–500, default 100</span>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal" data-i18n="common.cancel">Cancel</button>
@@ -166,13 +185,16 @@
 
 <!-- 手动执行结果 -->
 <div class="modal fade" id="runModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title"><span data-i18n="hc.result.title">Run Result</span> <span id="runModalBadge"></span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" id="runResultBody"></div>
+            <div class="modal-body">
+                <div id="runResultBody"></div>
+                <div id="runResultGrid"></div>
+            </div>
         </div>
     </div>
 </div>
@@ -265,8 +287,19 @@
 </footer>
 <script src="/lib/jquery/jquery-3.7.1.min.js"></script>
 <script src="/lib/bootstrap-5.2.3/js/bootstrap.bundle.min.js"></script>
+<script src="/lib/codemirror/codemirror.min.js"></script>
+<script src="/lib/codemirror/sql.min.js"></script>
+<script src="/lib/codemirror/show-hint.min.js"></script>
+<script src="/lib/codemirror/sql-hint.min.js"></script>
+<script src="/lib/codemirror/matchbrackets.min.js"></script>
+<script src="/lib/codemirror/comment.min.js"></script>
+<script src="/lib/codemirror/searchcursor.min.js"></script>
+<script src="/lib/codemirror/search.min.js"></script>
+<script src="/lib/codemirror/dialog.min.js"></script>
 <script src="/js/common.js"></script>
 <script src="/js/i18n.js"></script>
+<script src="/js/sql-editor.js"></script>
+<script src="/js/result-grid.js"></script>
 <script src="/js/healthchecks.js"></script>
 </body>
 </html>

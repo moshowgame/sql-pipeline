@@ -73,7 +73,8 @@ function loadDetail(planId, keepScroll) {
 function renderDetail(detail, keepScroll) {
     const p = detail.plan;
     $('#detailTitle').text('#' + p.id + ' ' + p.planName);
-    $('#detailStatus').html(App.planBadge(p.status));
+    $('#detailStatus').html(App.planBadge(p.status) +
+        (p.dryRun ? ' <span class="badge bg-info">DRY RUN</span>' : ''));
 
     $('#planInfo').html([
         infoCell(I18N.t('rel.info.cr'), p.crNumber || '-'),
@@ -82,7 +83,9 @@ function renderDetail(detail, keepScroll) {
         infoCell(I18N.t('rel.info.defaultConn'), p.defaultConnKey || '-'),
         infoCell(I18N.t('rel.createModal.releaseType'), p.releaseType || 'FOLDER'),
         infoCell(I18N.t('rel.createModal.releasePath'), p.releasePath || '-'),
-        infoCell(I18N.t('rel.info.rerunCount'), String(p.rerunCount || 0))
+        infoCell(I18N.t('rel.info.rerunCount'), String(p.rerunCount || 0)),
+        infoCell(I18N.t('rel.startModal.dryRun'), p.dryRun
+            ? App.badge(I18N.t('common.enabled'), 'info') : I18N.t('common.disabled'))
     ].join(''));
 
     const st = p.status;
@@ -441,6 +444,8 @@ function openCreate() {
     $('#cDefaultConn').html(connSelectOptions());
     addStepRow();
     toggleReleaseType();
+    setZipSource('local');
+    $('#nexusUrl, #nexusUser, #nexusToken').val('');
     $('#cPlanName').prop('disabled', false);
     $('#createModal .btn-primary').show();
     $('#createModalTitle').text(I18N.t('rel.createModal.title'));
@@ -500,13 +505,40 @@ function viewPlan(id) {
 }
 
 function toggleReleaseType() {
-    if (modalMode === 'view') return;
-    const isZip = $('#cReleaseType').val() === 'ZIP';
-    // ZIP 解压功能暂未实现：禁用 SCAN 并提示（计划仍可保存，start 时后端会拒绝）
-    $('#cScanBtn').prop('disabled', isZip);
-    if (isZip) {
-        App.toast(I18N.t('rel.toast.zipNotImplemented'), 'warning');
+    if (modalMode === 'view') {
+        $('#zipSourcePanel').addClass('d-none');
+        return;
     }
+    const isZip = $('#cReleaseType').val() === 'ZIP';
+    $('#zipSourcePanel').toggleClass('d-none', !isZip);
+    // 恢复 SCAN 可用（ZIP 现已支持：解压缓存 + zip-slip 防护）
+    $('#cScanBtn').prop('disabled', false);
+}
+
+/** ZIP 来源切换：本地路径 / Nexus 下载。 */
+function setZipSource(src) {
+    const nexus = src === 'nexus';
+    $('#zipSrcNexusBtn').toggleClass('btn-primary active', nexus).toggleClass('btn-outline-primary', !nexus);
+    $('#zipSrcLocalBtn').toggleClass('btn-primary active', !nexus).toggleClass('btn-outline-primary', nexus);
+    $('#nexusInputs').toggleClass('d-none', !nexus);
+    $('#zipLocalHint').toggleClass('d-none', nexus);
+}
+
+/** Nexus 下载 + 自动解压目录检测：成功后回填 release_path 并展示步骤预览。 */
+function fetchNexusZip() {
+    const nexusUrl = $('#nexusUrl').val().trim();
+    if (!nexusUrl) { App.toast(I18N.t('rel.toast.pathRequired'), 'danger'); return; }
+    const $btn = $('#nexusFetchBtn').prop('disabled', true);
+    App.api('POST', '/api/releases/fetch-zip', {
+            nexusUrl: nexusUrl,
+            username: $('#nexusUser').val().trim(),
+            token: $('#nexusToken').val()
+        }).done(function (res) {
+            $('#cReleasePath').val(res.releasePath);
+            renderScanPreview(res.steps || []);
+            App.toast(I18N.t('rel.toast.nexusFetched', { n: (res.steps || []).length }));
+        })
+        .always(function () { $btn.prop('disabled', false); });
 }
 
 function addStepRow(no, connKey, afterMode, executor, dirName, verifySql) {
@@ -553,26 +585,31 @@ function doScan() {
         defaultConnKey: $('#cDefaultConn').val() || null
     };
     App.api('POST', '/api/releases/scan', body).then(function (list) {
-        if (!list.length) {
-            $('#stepConfigRows').empty();
-            $('#scanPreview').html('<div class="alert alert-warning py-2 mb-0">' + App.escapeHtml(I18N.t('rel.scan.empty')) + '</div>');
-            return;
-        }
-        // 扫描结果生成可编辑步骤行（步骤号默认 = 目录名数字，可调整执行顺序）
-        $('#stepConfigRows').empty();
-        list.forEach(function (s) {
-            addStepRow(s.stepNo, s.connKey, s.afterMode, s.executor, s.dirName, s.verifySql);
-        });
-        const rows = list.map(function (s) {
-            return '<tr><td class="mono">' + App.escapeHtml(s.dirName) + '</td>' +
-                '<td class="mono">' + I18N.t('rel.scan.fileCount', { n: s.files.length }) + '</td></tr>';
-        });
-        $('#scanPreview').html('<div class="fw-bold mb-1 small">' + App.escapeHtml(I18N.t('rel.scan.filesTitle')) + '</div>' +
-            '<table class="table table-sm table-bordered mb-0"><thead class="table-light">' +
-            '<tr><th data-i18n="rel.createModal.dirName">Directory</th>' +
-            '<th data-i18n="rel.scan.col.files">SQL Files</th></tr></thead><tbody>' +
-            rows.join('') + '</tbody></table>');
+        renderScanPreview(list || []);
     });
+}
+
+/** 扫描/检测结果渲染：生成可编辑步骤行 + 目录预览表。 */
+function renderScanPreview(list) {
+    if (!list.length) {
+        $('#stepConfigRows').empty();
+        $('#scanPreview').html('<div class="alert alert-warning py-2 mb-0">' + App.escapeHtml(I18N.t('rel.scan.empty')) + '</div>');
+        return;
+    }
+    // 扫描结果生成可编辑步骤行（步骤号默认 = 目录名数字，可调整执行顺序）
+    $('#stepConfigRows').empty();
+    list.forEach(function (s) {
+        addStepRow(s.stepNo, s.connKey, s.afterMode, s.executor, s.dirName, s.verifySql);
+    });
+    const rows = list.map(function (s) {
+        return '<tr><td class="mono">' + App.escapeHtml(s.dirName) + '</td>' +
+            '<td class="mono">' + I18N.t('rel.scan.fileCount', { n: s.files.length }) + '</td></tr>';
+    });
+    $('#scanPreview').html('<div class="fw-bold mb-1 small">' + App.escapeHtml(I18N.t('rel.scan.filesTitle')) + '</div>' +
+        '<table class="table table-sm table-bordered mb-0"><thead class="table-light">' +
+        '<tr><th data-i18n="rel.createModal.dirName">Directory</th>' +
+        '<th data-i18n="rel.scan.col.files">SQL Files</th></tr></thead><tbody>' +
+        rows.join('') + '</tbody></table>');
 }
 
 function savePlan() {
@@ -620,6 +657,7 @@ function openStart() {
     $('#startModalPlan').text('#' + currentPlan.id + ' ' + currentPlan.planName);
     $('#sCrNumber').val(currentPlan.crNumber || '');
     $('#sRemark').val(currentPlan.remark || '');
+    $('#sDryRun').prop('checked', false);
     $('#startOperator').text(App.operator);
     new bootstrap.Modal('#startModal').show();
 }
@@ -628,10 +666,12 @@ function doStart() {
     const crNumber = $('#sCrNumber').val().trim();
     const remark = $('#sRemark').val().trim();
     if (!crNumber || !remark) { App.toast(I18N.t('rel.toast.crRequired'), 'danger'); return; }
-    App.api('POST', '/api/releases/' + currentPlanId + '/start', { crNumber: crNumber, remark: remark })
+    const dryRun = $('#sDryRun').prop('checked');
+    App.api('POST', '/api/releases/' + currentPlanId + '/start',
+            { crNumber: crNumber, remark: remark, dryRun: dryRun })
         .then(function () {
             bootstrap.Modal.getInstance($('#startModal')[0]).hide();
-            App.toast(I18N.t('rel.toast.started'));
+            App.toast(dryRun ? I18N.t('rel.toast.dryRunStarted') : I18N.t('rel.toast.started'));
             loadDetail(currentPlanId);
         });
 }
@@ -713,6 +753,11 @@ function gotoPlanLogsPage(p) {
     $('#logsPager').html(pagerHtml(planLogsPage, pages,
         'gotoPlanLogsPage(' + (planLogsPage - 1) + ')', 'gotoPlanLogsPage(' + (planLogsPage + 1) + ')',
         from + 1, from + shown.length, all.length));
+}
+
+/** 自包含 HTML 执行报告（新标签页渲染，可另存归档）。 */
+function downloadReport() {
+    window.open('/api/releases/' + currentPlanId + '/report', '_blank');
 }
 
 function openSummaries() {

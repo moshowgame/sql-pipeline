@@ -9,16 +9,21 @@ import com.sqlpipeline.release.event.ReleaseEventPublisher;
 import com.sqlpipeline.release.orchestrator.ReleaseOrchestrator;
 import com.sqlpipeline.release.orchestrator.StepConfig;
 import com.sqlpipeline.release.scanner.ScannedStepView;
+import com.sqlpipeline.release.zip.NexusZipFetcher;
 import com.sqlpipeline.web.dto.ReleaseCreateReq;
+import com.sqlpipeline.web.dto.ReleaseFetchZipReq;
 import com.sqlpipeline.web.dto.ReleaseScanReq;
 import com.sqlpipeline.web.dto.ReleaseStartReq;
 import com.sqlpipeline.web.dto.ReleaseUpdateReq;
 import com.sqlpipeline.web.dto.RetryReq;
 import com.sqlpipeline.web.dto.StepConfigReq;
+import com.sqlpipeline.web.report.ReleaseReportService;
 import com.sqlpipeline.web.util.Operator;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -41,6 +46,19 @@ public class ReleaseController {
 
     private final ReleaseOrchestrator orchestrator;
     private final ReleaseEventPublisher publisher;
+    private final ReleaseReportService reportService;
+    private final NexusZipFetcher nexusZipFetcher;
+
+    /** Nexus 发布包下载 + 解压目录检测：返回 zip 缓存路径（回填 release_path）与步骤预览；凭据不落库不打日志。 */
+    @PostMapping("/fetch-zip")
+    public R<Map<String, Object>> fetchZip(@Valid @RequestBody ReleaseFetchZipReq req) {
+        String zipPath = nexusZipFetcher.fetch(req.nexusUrl(), req.username(), req.token());
+        List<ScannedStepView> steps = orchestrator.preview("ZIP", zipPath, null, List.of());
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("releasePath", zipPath);
+        result.put("steps", steps);
+        return R.ok(result);
+    }
 
     /** 预览 release path 下的数字子目录（asc），结果作为 release step（不落库）。 */
     @PostMapping("/scan")
@@ -86,7 +104,7 @@ public class ReleaseController {
     @PostMapping("/{id}/start")
     public R<Void> start(@PathVariable Long id, @Valid @RequestBody ReleaseStartReq req,
                          @RequestHeader(value = Operator.HEADER, required = false) String operator) {
-        orchestrator.start(id, req.crNumber(), req.remark(), Operator.of(operator));
+        orchestrator.start(id, req.crNumber(), req.remark(), Operator.of(operator), req.dryRun());
         return R.ok();
     }
 
@@ -134,6 +152,15 @@ public class ReleaseController {
     @GetMapping(value = "/{id}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(@PathVariable Long id) {
         return publisher.subscribe(id);
+    }
+
+    /** 自包含 HTML 执行报告（浏览器渲染，可另存归档）。 */
+    @GetMapping(value = "/{id}/report", produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> report(@PathVariable Long id) {
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "inline; filename=\"release-report-" + id + ".html\"")
+                .body(reportService.buildHtml(id));
     }
 
     private List<StepConfig> toConfigs(List<StepConfigReq> reqs) {

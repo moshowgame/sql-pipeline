@@ -2,7 +2,11 @@ package com.sqlpipeline.web.controller;
 
 import com.sqlpipeline.common.api.R;
 import com.sqlpipeline.datasource.entity.DbConnection;
+import com.sqlpipeline.datasource.executor.AdHocQueryService;
+import com.sqlpipeline.datasource.executor.QueryResult;
+import com.sqlpipeline.datasource.metadata.DbMetadataService;
 import com.sqlpipeline.datasource.service.ConnectionService;
+import com.sqlpipeline.web.dto.AdHocQueryReq;
 import com.sqlpipeline.web.dto.ConnectionCreateReq;
 import com.sqlpipeline.web.dto.ConnectionUpdateReq;
 import com.sqlpipeline.web.dto.ConnectionView;
@@ -27,10 +31,25 @@ import java.util.List;
 public class ConnectionController {
 
     private final ConnectionService connectionService;
+    private final DbMetadataService metadataService;
+    private final AdHocQueryService adHocQueryService;
 
     @GetMapping
     public R<List<ConnectionView>> list() {
         return R.ok(connectionService.list().stream().map(ConnectionView::from).toList());
+    }
+
+    /** 表/字段元数据（SQL 编辑器补全），缓存 5 分钟。 */
+    @GetMapping("/key/{connKey}/metadata")
+    public R<List<DbMetadataService.TableMeta>> metadata(@PathVariable String connKey) {
+        return R.ok(metadataService.tables(connKey));
+    }
+
+    /** 即席只读查询（多语句 SELECT，L2 AST 拦截 + 只读事务兜底）。 */
+    @PostMapping("/key/{connKey}/query")
+    public R<List<QueryResult>> query(@PathVariable String connKey,
+                                      @Valid @RequestBody AdHocQueryReq req) {
+        return R.ok(adHocQueryService.run(connKey, req.sql(), req.maxRows(), req.timeoutSec()));
     }
 
     @GetMapping("/{id}")
@@ -53,7 +72,9 @@ public class ConnectionController {
         entity.setMaxRows(req.maxRows());
         entity.setQueryTimeoutS(req.queryTimeoutS());
         entity.setEnabled(req.enabled());
-        return R.ok(connectionService.create(entity, req.password(), Operator.of(operator)));
+        Long id = connectionService.create(entity, req.password(), Operator.of(operator));
+        metadataService.evict(entity.getConnKey());
+        return R.ok(id);
     }
 
     @PutMapping("/{id}")
@@ -71,6 +92,7 @@ public class ConnectionController {
         patch.setQueryTimeoutS(req.queryTimeoutS());
         patch.setEnabled(req.enabled());
         connectionService.update(id, patch, req.password(), Operator.of(operator));
+        metadataService.evict(connectionService.get(id).getConnKey());
         return R.ok();
     }
 
@@ -82,13 +104,16 @@ public class ConnectionController {
     @PostMapping("/{id}/reload")
     public R<Void> reload(@PathVariable Long id) {
         connectionService.reload(id);
+        metadataService.evict(connectionService.get(id).getConnKey());
         return R.ok();
     }
 
     @DeleteMapping("/{id}")
     public R<Void> delete(@PathVariable Long id,
                           @RequestHeader(value = Operator.HEADER, required = false) String operator) {
+        String connKey = connectionService.get(id).getConnKey();
         connectionService.disable(id, Operator.of(operator));
+        metadataService.evict(connKey);
         return R.ok();
     }
 }

@@ -55,11 +55,12 @@ public class HealthCheckController {
         return R.ok();
     }
 
-    /** 手动执行（触发方式 MANUAL），可携带参数覆盖默认参数。 */
+    /** 手动执行（触发方式 MANUAL），可携带参数覆盖默认参数；headRows 控制结果网格预览行数（1~500）。 */
     @PostMapping("/{id}/run")
     public R<HealthCheckRun> run(@PathVariable Long id,
                                  @RequestBody(required = false) HealthCheckRunReq req) {
-        return R.ok(healthCheckService.run(id, "MANUAL", req == null ? null : req.params()));
+        return R.ok(healthCheckService.run(id, "MANUAL",
+                req == null ? null : req.params(), req == null ? null : req.headRows()));
     }
 
     @GetMapping("/{id}/runs")

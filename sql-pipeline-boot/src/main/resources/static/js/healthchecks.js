@@ -3,6 +3,7 @@ let connections = [];
 let notifyChannels = [];
 let runsState = { defId: null, page: 1, size: 10, total: 0, day: '' };
 let historyState = { defId: null, page: 1, size: 10, total: 0, day: '' };
+let defSqlCm = null; // SQL 编辑器实例（CodeMirror）
 
 /** 常用 Cron 示例（Spring 6 段：秒 分 时 日 月 周），点击应用到输入框。 */
 const CRON_SAMPLES = [
@@ -30,9 +31,69 @@ function applyCronSample(expr) {
     $('#dCron').val(expr);
 }
 
+/** 懒加载 SQL 编辑器（首次打开弹窗时挂载到 #dSql，Ctrl+Enter 保存）。 */
+function ensureSqlEditor() {
+    if (defSqlCm || typeof CodeMirror === 'undefined') return defSqlCm;
+    defSqlCm = SqlEditor.attach(document.getElementById('dSql'), {
+        exec: function () { if ($('#defId').length) saveDef(); }
+    });
+    // 快捷键：Ctrl+Shift+Enter 试运行（选中/全部）
+    defSqlCm.setOption('extraKeys', Object.assign({}, defSqlCm.getOption('extraKeys'), {
+        'Shift-Ctrl-Enter': function () { runSelectedSql(); }
+    }));
+    return defSqlCm;
+}
+
+/** 拉取当前连接的表/字段元数据，注入编辑器补全（失败静默，仅退化为关键字补全）。 */
+function loadSqlHints(connKey) {
+    if (!connKey || !defSqlCm) return;
+    App.api('GET', '/api/connections/key/' + encodeURIComponent(connKey) + '/metadata')
+        .then(function (tables) {
+            const hint = {};
+            (tables || []).forEach(function (t) { hint[t.name] = t.columns; });
+            SqlEditor.setHintTables(defSqlCm, hint);
+        }).fail(function () { /* 元数据不可用时保持关键字级补全 */ });
+}
+
+function toggleSqlTheme() {
+    if (defSqlCm) SqlEditor.toggleTheme(defSqlCm);
+}
+
+/** 试运行：优先执行选中语句（无选区则执行全部），走只读即席查询接口。 */
+function runSelectedSql() {
+    if (!defSqlCm) return;
+    const selected = defSqlCm.getSelection();
+    const sql = (selected && selected.trim()) ? selected : defSqlCm.getValue();
+    if (!sql.trim()) { App.toast(I18N.t('hc.adhoc.emptySql'), 'warning'); return; }
+    const connKey = $('#dConnKey').val();
+    if (!connKey) { App.toast(I18N.t('hc.adhoc.connRequired'), 'warning'); return; }
+    App.api('POST', '/api/connections/key/' + encodeURIComponent(connKey) + '/query', { sql: sql })
+        .then(function (results) { showAdHocResults(connKey, results || []); });
+}
+
+/** 即席查询多结果集展示（复用结果弹窗，逐语句分区网格）。 */
+function showAdHocResults(connKey, results) {
+    $('#runModalBadge').html(' ' + App.badge('AD-HOC @ ' + connKey, 'primary'));
+    $('#runResultBody').html('<div class="text-muted small mb-1">' +
+        I18N.t('hc.adhoc.summary', { n: results.length }) + '</div>');
+    $('#runResultGrid').empty();
+    results.forEach(function (r, i) {
+        $('#runResultGrid').append(
+            '<div class="mb-3"><div class="fw-bold small mb-1">' +
+            App.escapeHtml(I18N.t('hc.adhoc.statement', { n: i + 1 })) +
+            ' <span class="text-muted fw-normal">· ' + r.rowCount + ' rows' + (r.truncated ? ' ▂' : '') + '</span></div>' +
+            '<div id="adhocGrid' + i + '"></div></div>');
+        App.resultGrid('#adhocGrid' + i, r, { maxHeight: '280px' });
+    });
+    new bootstrap.Modal('#runModal').show();
+}
+
 $(function () {
     App.bindOperator();
     renderCronSamples();
+    $('#defModal').on('shown.bs.modal', function () { SqlEditor.refresh(defSqlCm); });
+    // 连接切换 → 重载该库的表/字段补全
+    $('#dConnKey').on('change', function () { loadSqlHints(this.value); });
     App.api('GET', '/api/notify/channels').then(function (chs) {
         notifyChannels = Array.isArray(chs) ? chs.filter(c => c.enabled === 1) : [];
     }).fail(function () { notifyChannels = []; });
@@ -105,7 +166,10 @@ function openCreate() {
     $('#defModalTitle').text(I18N.t('hc.modal.create'));
     $('#defForm')[0].reset();
     $('#defId').val('');
+    if (defSqlCm) defSqlCm.setValue('');
+    ensureSqlEditor();
     $('#dConnKey').html(connOptions());
+    loadSqlHints($('#dConnKey').val());
     $('#dTimeout').val(30); $('#dEnabled').val(1);
     $('#dParams').val('{}');
     $('#dAssertType').val(''); $('#dAssertOp').val('=='); $('#dAssertValue').val('');
@@ -121,7 +185,9 @@ function openEdit(id) {
     $('#defId').val(d.id);
     $('#dName').val(d.name);
     $('#dConnKey').html(connOptions(d.connKey));
-    $('#dSql').val(d.sqlText);
+    ensureSqlEditor();
+    if (defSqlCm) defSqlCm.setValue(d.sqlText || '');
+    loadSqlHints(d.connKey);
     $('#dParams').val(App.prettyJson(d.paramsJson));
     $('#dAssertType').val(d.assertType || '');
     $('#dAssertOp').val(d.assertOp || '==');
@@ -135,6 +201,7 @@ function openEdit(id) {
 
 function saveDef() {
     const id = $('#defId').val();
+    if (defSqlCm) SqlEditor.sync(defSqlCm); // 回写 CodeMirror 内容到 textarea
     const body = {
         name: $('#dName').val().trim(),
         connKey: $('#dConnKey').val(),
@@ -194,7 +261,8 @@ function doRun() {
             return;
         }
     }
-    App.api('POST', '/api/health-checks/' + id + '/run', { params: params }).then(function (run) {
+    const headRows = Math.min(Math.max(parseInt($('#runHeadRows').val(), 10) || 100, 1), 500);
+    App.api('POST', '/api/health-checks/' + id + '/run', { params: params, headRows: headRows }).then(function (run) {
         bootstrap.Modal.getInstance($('#runParamsModal')[0]).hide();
         showRunResult(run);
     });
@@ -211,9 +279,17 @@ function showRunResult(run) {
         '<div class="col-md-3"><span class="kv-label">' + I18N.t('hc.result.trigger') + '</span><span class="mono">' + run.triggerType + '</span></div>' +
         '</div>' +
         (run.assertMsg ? '<div class="alert ' + (failed ? 'alert-danger' : 'alert-success') + ' py-2">' + I18N.t('hc.result.assert') + App.escapeHtml(run.assertMsg) + '</div>' : '') +
-        (run.errorMsg ? '<div class="alert alert-danger py-2 sql-text">' + I18N.t('hc.result.error') + App.escapeHtml(run.errorMsg) + '</div>' : '') +
-        '<div class="text-muted small mb-1">' + I18N.t('hc.result.preview') + '</div>' +
-        '<pre class="border rounded bg-light p-2 sql-text" style="max-height:320px;overflow:auto">' + App.escapeHtml(App.prettyJson(run.resultHead)) + '</pre>');
+        (run.errorMsg ? '<div class="alert alert-danger py-2 sql-text">' + I18N.t('hc.result.error') + App.escapeHtml(run.errorMsg) + '</div>' : ''));
+    // DBeaver 式结果网格（无列数据时回退 JSON 文本预览）
+    let head = null;
+    try { head = run.resultHead ? JSON.parse(run.resultHead) : null; } catch (e) { /* ignore */ }
+    if (head && Array.isArray(head.columns) && head.columns.length) {
+        App.resultGrid('#runResultGrid', head, { maxHeight: '400px' });
+    } else {
+        $('#runResultGrid').html(run.resultHead
+            ? '<pre class="border rounded bg-light p-2 sql-text" style="max-height:320px;overflow:auto">' + App.escapeHtml(App.prettyJson(run.resultHead)) + '</pre>'
+            : '');
+    }
     new bootstrap.Modal('#runModal').show();
     loadListQuietly();
 }

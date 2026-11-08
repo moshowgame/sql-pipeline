@@ -26,6 +26,7 @@ import com.sqlpipeline.release.scanner.ReleaseScanner;
 import com.sqlpipeline.release.scanner.ScannedStep;
 import com.sqlpipeline.release.scanner.ScannedStepView;
 import com.sqlpipeline.release.scanner.ScriptHash;
+import com.sqlpipeline.release.zip.ZipExtractor;
 import com.sqlpipeline.datasource.guard.SqlSplitter;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.DistributionSummary;
@@ -77,6 +78,8 @@ public class ReleaseOrchestrator {
     private static final Pattern PLAN_NAME = Pattern.compile("^[A-Za-z0-9._-]+$");
     /** 非事务模式标记文件：置于步骤目录内，该目录逐条自动提交、失败不回滚（用于 CONCURRENTLY 等非事务 DDL）。 */
     private static final String NON_TX_MARKER = "_nontransactional";
+    /** ZIP 解压缓存目录名（位于 base-path 下）。 */
+    private static final String ZIP_CACHE_DIR = "zip-cache";
     private static final Pattern CONCURRENTLY = Pattern.compile("(?i)\\bCONCURRENTLY\\b");
     /** verify_sql 写入 release_sql_log 时使用的虚拟文件名（P0 提交前验证卡点）。 */
     private static final String VERIFY_LOG_NAME = "(verify_sql)";
@@ -160,6 +163,11 @@ public class ReleaseOrchestrator {
         if (!"FOLDER".equals(type) && !"ZIP".equals(type)) {
             throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.typeInvalid", releaseType);
         }
+        if ("FOLDER".equals(type)) {
+            resolveReleasePath(releasePath);
+        } else {
+            resolveZipFile(releasePath);
+        }
         validateConnKey(defaultConnKey);
         for (StepConfig c : stepConfigs == null ? List.<StepConfig>of() : stepConfigs) {
             if (c.stepNo() == null || c.stepNo() < 1) {
@@ -175,7 +183,7 @@ public class ReleaseOrchestrator {
         return type;
     }
 
-    /** 扫描 release path 下的数字子目录（asc），返回步骤视图（ZIP 类型暂未实现）。 */
+    /** 扫描 release path 下的数字子目录（asc），返回步骤视图（ZIP 类型先解压到 zip-cache 再扫描）。 */
     public List<ScannedStepView> preview(String releaseType, String releasePath,
                                          String defaultConnKey, List<StepConfig> stepConfigs) {
         Path planDir = releaseDir(releaseType, releasePath);
@@ -204,9 +212,9 @@ public class ReleaseOrchestrator {
 
     // ---------- 状态机操作 ----------
 
-    /** 执行者提交 CR + Remark 后启动（RL-5）：同步完成校验与元数据，异步驱动执行。 */
-    public void start(Long planId, String crNumber, String remark, String operator) {
-        boolean drive = lockRegistry.withLock(planId, () -> prepareStart(planId, crNumber, remark, operator));
+    /** 执行者提交 CR + Remark 后启动（RL-5）：同步完成校验与元数据，异步驱动执行。dryRun=true 仅预演。 */
+    public void start(Long planId, String crNumber, String remark, String operator, Boolean dryRun) {
+        boolean drive = lockRegistry.withLock(planId, () -> prepareStart(planId, crNumber, remark, operator, dryRun));
         if (drive) {
             submitDrive(planId);
         }
@@ -276,11 +284,13 @@ public class ReleaseOrchestrator {
 
     /** 全流程重跑（RL-9）：同步记录摘要并重置，异步从头执行。 */
     public void rerunAll(Long planId, String operator) {
+        final boolean[] dryRun = {false};
         String crNumber = lockRegistry.withLock(planId, () -> {
             ReleasePlan plan = requirePlan(planId);
             if (PlanStatus.RUNNING.name().equals(plan.getStatus())) {
                 throw BizException.i18n(ErrorCode.RL_PLAN_ALREADY_STARTED, "error.rl.rerunNotAllowed");
             }
+            dryRun[0] = Boolean.TRUE.equals(plan.getDryRun());
             recordSummary(plan, plan.getRerunCount() + 1);
             stepMapper.deleteByPlan(planId);
             planMapper.resetForRerun(planId);
@@ -288,7 +298,7 @@ public class ReleaseOrchestrator {
                     planId, plan.getRerunCount() + 1, operator);
             return plan.getCrNumber();
         });
-        submitDriver(planId, () -> startInternal(planId, crNumber, "UAT rerun by " + operator, operator));
+        submitDriver(planId, () -> startInternal(planId, crNumber, "UAT rerun by " + operator, operator, dryRun[0]));
     }
 
     // ---------- 查询 ----------
@@ -386,7 +396,7 @@ public class ReleaseOrchestrator {
      * 启动元数据：校验 DRAFT → 扫描（按配置 dirName 映射、可重编 step_no）→ 步骤落库 → 计划置 RUNNING。
      * 返回是否需要驱动（目录为空时计划已置 SKIPPED，返回 false）。调用方需持锁。
      */
-    private boolean prepareStart(Long planId, String crNumber, String remark, String operator) {
+    private boolean prepareStart(Long planId, String crNumber, String remark, String operator, Boolean dryRun) {
         ReleasePlan plan = requirePlan(planId);
         if (!PlanStatus.DRAFT.name().equals(plan.getStatus())) {
             throw BizException.i18n(ErrorCode.RL_PLAN_ALREADY_STARTED,
@@ -452,17 +462,17 @@ public class ReleaseOrchestrator {
         // 元数据写入保持原子：避免"步骤已落库但计划仍 DRAFT"的中间态
         transactionTemplate.executeWithoutResult(tx -> {
             stepMapper.batchInsert(steps);
-            planMapper.updateForStart(planId, crNumber, remark, operator, PlanStatus.RUNNING.name());
+            planMapper.updateForStart(planId, crNumber, remark, operator, PlanStatus.RUNNING.name(), dryRun);
         });
         publisher.sendPlan(planId, Map.of("planId", planId, "status", PlanStatus.RUNNING.name()));
-        log.info("发布计划启动: planId={}, planName={}, type={}, path={}, steps={}, operator={}, cr={}",
+        log.info("发布计划启动: planId={}, planName={}, type={}, path={}, steps={}, operator={}, cr={}, dryRun={}",
                 planId, plan.getPlanName(), plan.getReleaseType(), plan.getReleasePath(),
-                steps.size(), operator, crNumber);
+                steps.size(), operator, crNumber, Boolean.TRUE.equals(dryRun));
         return true;
     }
 
-    private void startInternal(Long planId, String crNumber, String remark, String operator) {
-        if (prepareStart(planId, crNumber, remark, operator)) {
+    private void startInternal(Long planId, String crNumber, String remark, String operator, Boolean dryRun) {
+        if (prepareStart(planId, crNumber, remark, operator, dryRun)) {
             driveInternal(planId);
         }
     }
@@ -472,6 +482,8 @@ public class ReleaseOrchestrator {
      * 调用方必须已持有 planId 的锁。
      */
     private void driveInternal(Long planId) {
+        ReleasePlan plan = planMapper.selectById(planId);
+        boolean dryRun = plan != null && Boolean.TRUE.equals(plan.getDryRun());
         while (true) {
             ReleaseStep next = stepMapper.selectNextActionable(planId);
             if (next == null) {
@@ -493,7 +505,8 @@ public class ReleaseOrchestrator {
                 notifyPlanFail(planId);
                 return;
             }
-            if (StepStatus.SUCCESS.name().equals(done.getStatus())
+            // Dry-Run 预演不设人工卡点，WAIT 步骤直接放行以完整走完流程
+            if (!dryRun && StepStatus.SUCCESS.name().equals(done.getStatus())
                     && AfterMode.WAIT.name().equalsIgnoreCase(done.getAfterMode())) {
                 stepMapper.updateStatus(done.getId(), StepStatus.WAITING_CONTINUE.name());
                 publishStep(done, StepStatus.WAITING_CONTINUE.name());
@@ -518,9 +531,11 @@ public class ReleaseOrchestrator {
         } else {
             planMapper.markFinished(planId, PlanStatus.COMPLETED.name());
             recordSummary(plan, plan.getRerunCount() + 1);
-            alertService.onPlanCompleted(plan.getId(), plan.getPlanName(), plan.getCrNumber(), plan.getOperator());
+            if (!Boolean.TRUE.equals(plan.getDryRun())) {
+                alertService.onPlanCompleted(plan.getId(), plan.getPlanName(), plan.getCrNumber(), plan.getOperator());
+            }
             publisher.sendPlan(planId, Map.of("planId", planId, "status", PlanStatus.COMPLETED.name()));
-            log.info("发布计划完成: planId={}, planName={}", planId, plan.getPlanName());
+            log.info("发布计划完成: planId={}, planName={}, dryRun={}", planId, plan.getPlanName(), plan.getDryRun());
         }
     }
 
@@ -530,6 +545,7 @@ public class ReleaseOrchestrator {
         ReleasePlan plan = planMapper.selectById(step.getPlanId());
         int runSeq = (plan != null && plan.getRerunCount() != null ? plan.getRerunCount() : 0) + 1;
         String operator = plan == null ? null : plan.getOperator();
+        boolean dryRun = plan != null && Boolean.TRUE.equals(plan.getDryRun());
         stepMapper.markRunning(step.getId());
         publishStep(step, StepStatus.RUNNING.name());
 
@@ -552,7 +568,7 @@ public class ReleaseOrchestrator {
         try (Connection conn = registry.get(step.getConnKey()).getConnection()) {
             try {
                 conn.setAutoCommit(nonTx);
-                executeSqlFiles(conn, step, dir, nonTx, deadline, runSeq, operator);
+                executeSqlFiles(conn, step, dir, nonTx, deadline, runSeq, operator, dryRun);
                 if (nonTx) {
                     // 非事务模式数据已逐条提交：verify_sql 即使失败也无法回滚，仅告警跳过
                     if (hasText(step.getVerifySql())) {
@@ -562,12 +578,17 @@ public class ReleaseOrchestrator {
                 } else {
                     // P0 验证卡点：COMMIT 之前在事务内复核落库结果（只读 SELECT，返回至少一行才放行），失败即整体回滚
                     executeVerify(conn, step, deadline, runSeq, operator);
-                    conn.commit();
+                    if (dryRun) {
+                        // Dry-Run 预演：变更 SQL 未执行（仅记录 PLANNED），verify 预检后回滚，不落任何变更
+                        conn.rollback();
+                    } else {
+                        conn.commit();
+                    }
                 }
                 stepMapper.markSuccess(step.getId(), System.currentTimeMillis() - t0);
                 publishStep(step, StepStatus.SUCCESS.name());
-                log.info("发布步骤成功: planId={}, stepNo={}, nonTx={}, durationMs={}",
-                        step.getPlanId(), step.getStepNo(), nonTx, System.currentTimeMillis() - t0);
+                log.info("发布步骤成功: planId={}, stepNo={}, nonTx={}, dryRun={}, durationMs={}",
+                        step.getPlanId(), step.getStepNo(), nonTx, dryRun, System.currentTimeMillis() - t0);
             } catch (Exception e) {
                 if (!nonTx) {
                     safeRollback(conn);
@@ -588,8 +609,11 @@ public class ReleaseOrchestrator {
             ReleaseStep after = stepMapper.selectById(step.getId());
             if (after != null) {
                 recordStepMetrics(step.getPlanId(), step.getStepNo(), after.getStatus(), after.getDurationMs());
-                // 告警钩子：失败 / 成功事件（通道按订阅过滤）
-                if (StepStatus.FAIL.name().equals(after.getStatus())) {
+                // Dry-Run 预演不触发告警；失败 / 成功事件（通道按订阅过滤）
+                if (dryRun) {
+                    log.info("Dry-Run 预演步骤结束，跳过告警: planId={}, stepNo={}, status={}",
+                            step.getPlanId(), step.getStepNo(), after.getStatus());
+                } else if (StepStatus.FAIL.name().equals(after.getStatus())) {
                     alertService.onReleaseStepFail(step.getPlanId(),
                             plan == null ? null : plan.getPlanName(),
                             plan == null ? null : plan.getCrNumber(),
@@ -606,7 +630,8 @@ public class ReleaseOrchestrator {
     }
 
     private void executeSqlFiles(Connection conn, ReleaseStep step, Path dir,
-                                 boolean nonTx, long deadline, Integer runSeq, String operator) throws SQLException, IOException {
+                                 boolean nonTx, long deadline, Integer runSeq, String operator,
+                                 boolean dryRun) throws SQLException, IOException {
         int seq = 0;
         try (Stream<Path> files = Files.list(dir)) {
             List<Path> sqlFiles = files
@@ -623,12 +648,12 @@ public class ReleaseOrchestrator {
                     if (deadline > 0 && System.currentTimeMillis() > deadline) {
                         throw new SQLException(msg("error.rl.stepTimeout", properties.getStepTotalTimeoutSec()));
                     }
-                    // 事务模式下拒绝 CONCURRENTLY 等非事务 DDL（PostgreSQL 限制）
+                    // 事务模式下拒绝 CONCURRENTLY 等非事务 DDL（PostgreSQL 限制）；Dry-Run 同样预检以便提前暴露问题
                     if (!nonTx && CONCURRENTLY.matcher(sql).find()) {
                         throw new SQLException(msg("error.rl.concurrentlyInTx"));
                     }
                     seq++;
-                    executeSingle(conn, step, file, seq, sql, runSeq, operator);
+                    executeSingle(conn, step, file, seq, sql, runSeq, operator, dryRun);
                 }
             }
         }
@@ -675,8 +700,13 @@ public class ReleaseOrchestrator {
     }
 
     private void executeSingle(Connection conn, ReleaseStep step, Path file, int seq, String sql,
-                               Integer runSeq, String operator) throws SQLException {
+                               Integer runSeq, String operator, boolean dryRun) throws SQLException {
         long t0 = System.currentTimeMillis();
+        if (dryRun) {
+            // Dry-Run 预演：不执行变更，仅记录 PLANNED 计划状态供报告/日志追溯
+            insertSqlLog(step, file, seq, sql, "PLANNED", 0L, null, runSeq, operator);
+            return;
+        }
         try (Statement st = conn.createStatement()) {
             st.setQueryTimeout(properties.getStatementTimeoutSec());
             st.execute(sql);
@@ -775,10 +805,10 @@ public class ReleaseOrchestrator {
         }
     }
 
-    /** 计划的发布目录：FOLDER 用 release_path；旧数据（无 release_path）回退 base_path/plan_name。 */
+    /** 计划的发布目录：FOLDER 用 release_path；ZIP 解压到 zip-cache 后扫描；旧数据（无 release_path）回退 base_path/plan_name。 */
     private Path releaseDir(ReleasePlan plan) {
         if ("ZIP".equals(plan.getReleaseType())) {
-            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.zipNotImplemented");
+            return resolveZipDir(plan.getReleasePath());
         }
         if (hasText(plan.getReleasePath())) {
             return resolveReleasePath(plan.getReleasePath());
@@ -786,15 +816,71 @@ public class ReleaseOrchestrator {
         return resolvePlanDir(plan.getBasePath(), plan.getPlanName());
     }
 
-    /** SCAN / 执行共用的发布目录解析：ZIP 暂未实现；FOLDER 支持绝对路径（share folder）或基于 base-path 的相对路径。 */
+    /** SCAN / 执行共用的发布目录解析：ZIP 解压缓存；FOLDER 支持绝对路径（share folder）或基于 base-path 的相对路径。 */
     private Path releaseDir(String releaseType, String releasePath) {
         if ("ZIP".equals(releaseType == null ? null : releaseType.toUpperCase())) {
-            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.zipNotImplemented");
+            return resolveZipDir(releasePath);
         }
         if (!hasText(releasePath)) {
             throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.pathRequired");
         }
         return resolveReleasePath(releasePath);
+    }
+
+    /**
+     * ZIP 发布目录：解压到 base-path/zip-cache/&lt;sha256(真实路径+mtime)&gt;/（解压一次复用，zip 未变更时直接命中缓存）。
+     * 先解压到临时目录再原子移动，避免半解压状态被复用；zip-slip 由 {@link ZipExtractor} 防护。
+     */
+    private Path resolveZipDir(String rawZipPath) {
+        Path zip = resolveZipFile(rawZipPath);
+        Path cacheRoot = requireBaseDir().resolve(ZIP_CACHE_DIR);
+        try {
+            Files.createDirectories(cacheRoot);
+            String key = ZipExtractor.sha256Hex(zip.toRealPath().toString()) + "-"
+                    + Files.getLastModifiedTime(zip).toMillis();
+            Path target = cacheRoot.resolve(key);
+            if (Files.isDirectory(target)) {
+                return target;
+            }
+            Path tmp = Files.createTempDirectory(cacheRoot, "extract-");
+            ZipExtractor.extract(zip, tmp);
+            try {
+                Files.move(tmp, target);
+            } catch (IOException moveFail) {
+                // 并发兜底：目标已存在则复用既有解压结果，清理本次临时目录
+                if (Files.isDirectory(target)) {
+                    ZipExtractor.deleteRecursively(tmp);
+                } else {
+                    throw moveFail;
+                }
+            }
+            log.info("ZIP 发布包已解压: zip={}, target={}", zip, target);
+            return target;
+        } catch (IOException e) {
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID,
+                    "error.rl.zipExtractFailed", brief(e));
+        }
+    }
+
+    /** ZIP 包文件解析与校验（存在性 + 普通文件）。 */
+    private Path resolveZipFile(String rawZipPath) {
+        if (!hasText(rawZipPath)) {
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.pathRequired");
+        }
+        Path p;
+        if (Paths.get(rawZipPath).isAbsolute()) {
+            p = Paths.get(rawZipPath);
+        } else {
+            Path base = requireBaseDir();
+            p = base.resolve(rawZipPath).normalize();
+            if (!p.startsWith(base)) {
+                throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.pathInvalid", rawZipPath);
+            }
+        }
+        if (!Files.isRegularFile(p)) {
+            throw BizException.i18n(ErrorCode.SYS_PARAM_INVALID, "error.rl.zipNotFound", rawZipPath);
+        }
+        return p;
     }
 
     /**

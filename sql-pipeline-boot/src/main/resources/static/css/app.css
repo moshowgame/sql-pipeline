@@ -380,3 +380,49 @@ pre.bg-light { background: #f8f9fb !important; border: 1px solid var(--sp-border
 
 /* 图标按钮（悬停 tooltip 说明用途） */
 .hc-icon-btn { padding: .28rem .5rem; font-size: .82rem; line-height: 1.2; }
+
+/* ---------------- SQL 编辑器（CodeMirror 封装） ---------------- */
+
+.sql-editor-box {
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.sql-editor-box .CodeMirror {
+    height: 170px;
+    font-family: var(--bs-font-monospace);
+}
+
+.sql-editor-box .CodeMirror-focused { border-color: transparent; }
+
+/* ---------------- 结果网格（DBeaver 风格） ---------------- */
+
+.rg-bar { margin-bottom: .4rem; }
+
+.rg-table { font-size: .82rem; }
+
+.rg-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f8f9fa;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.rg-rownum {
+    width: 1%;
+    min-width: 40px;
+    text-align: right;
+    color: #9ca3af;
+    background: #f8f9fa;
+    font-size: .74rem;
+}
+
+.rg-cell { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: cell; }
+
+.rg-null { color: #9ca3af; font-style: italic; font-size: .74rem; }
+
+.rg-info .badge { font-size: .68rem; }

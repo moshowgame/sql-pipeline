@@ -28,7 +28,8 @@
             remark      = #{remark},
             operator    = #{operator},
             started_at  = now(),
-            finished_at = NULL
+            finished_at = NULL,
+            dry_run     = COALESCE(#{dryRun}, dry_run)
         WHERE id = #{id}
     </update>
 

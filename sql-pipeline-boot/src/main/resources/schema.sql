@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS health_check_run (
 );
 CREATE INDEX IF NOT EXISTS idx_hc_run_def_time ON health_check_run (sql_def_id, started_at);
 COMMENT ON TABLE  health_check_run             IS '健康检查执行记录：trigger=CRON|MANUAL|RETRY，status=SUCCESS|FAIL|ERROR|TIMEOUT';
-COMMENT ON COLUMN health_check_run.result_head IS '前 20 行 JSON 摘要（截断 2000 字符）';
+COMMENT ON COLUMN health_check_run.result_head IS '结果摘要 JSON（CRON 前 20 行截断 2000 字符；MANUAL 默认 100 行、上限 500 行）';
 COMMENT ON COLUMN health_check_run.version     IS '执行时的定义版本快照';
 
 -- =====================================================================
@@ -152,6 +152,8 @@ CREATE TABLE IF NOT EXISTS release_plan (
 );
 ALTER TABLE release_plan ADD COLUMN IF NOT EXISTS release_type VARCHAR(16) NOT NULL DEFAULT 'FOLDER';
 ALTER TABLE release_plan ADD COLUMN IF NOT EXISTS release_path VARCHAR(512);
+ALTER TABLE release_plan ADD COLUMN IF NOT EXISTS dry_run BOOLEAN NOT NULL DEFAULT FALSE;
+COMMENT ON COLUMN release_plan.dry_run IS 'Dry-Run 预演执行：变更 SQL 不落库仅记录 PLANNED，verify_sql 真实执行后回滚预检';
 
 COMMENT ON TABLE  release_plan               IS '发布计划：DRAFT|RUNNING|WAITING|PAUSED|COMPLETED|FAILED|SKIPPED（仅 DRAFT 可编辑）';
 COMMENT ON COLUMN release_plan.release_type  IS 'FOLDER（release_path 为发布目录）| ZIP（release_path 为 zip 包，解压暂未实现）';

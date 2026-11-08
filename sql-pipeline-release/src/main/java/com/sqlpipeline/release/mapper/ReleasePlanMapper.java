@@ -17,7 +17,8 @@ public interface ReleasePlanMapper {
                        @Param("crNumber") String crNumber,
                        @Param("remark") String remark,
                        @Param("operator") String operator,
-                       @Param("status") String status);
+                       @Param("status") String status,
+                       @Param("dryRun") Boolean dryRun);
 
     int updateStatus(@Param("id") Long id, @Param("status") String status);
 

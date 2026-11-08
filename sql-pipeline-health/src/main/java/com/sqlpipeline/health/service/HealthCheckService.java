@@ -19,6 +19,7 @@ import com.sqlpipeline.health.entity.HealthCheckRun;
 import com.sqlpipeline.health.entity.SqlDefinition;
 import com.sqlpipeline.health.entity.SqlDefinitionHistory;
 import com.sqlpipeline.health.enums.RunStatus;
+import com.sqlpipeline.health.enums.TriggerType;
 import com.sqlpipeline.health.mapper.HealthCheckRunMapper;
 import com.sqlpipeline.health.mapper.SqlDefinitionHistoryMapper;
 import com.sqlpipeline.health.mapper.SqlDefinitionMapper;
@@ -55,6 +56,10 @@ public class HealthCheckService {
 
     private static final int RESULT_HEAD_ROWS = 20;
     private static final int RESULT_HEAD_MAX_CHARS = 2000;
+    /** 手动执行（网格展示）预览行数：默认 100，上限 500，字符上限同步放宽（TEXT 列无约束）。 */
+    private static final int MANUAL_HEAD_ROWS_DEFAULT = 100;
+    private static final int MANUAL_HEAD_ROWS_MAX = 500;
+    private static final int MANUAL_HEAD_MAX_CHARS = 512000;
 
     private final SqlDefinitionMapper defMapper;
     private final SqlDefinitionHistoryMapper historyMapper;
@@ -153,6 +158,11 @@ public class HealthCheckService {
     // ---------- 执行 ----------
 
     public HealthCheckRun run(Long defId, String triggerType, Map<String, Object> paramOverride) {
+        return run(defId, triggerType, paramOverride, null);
+    }
+
+    /** headRows 仅对 MANUAL 生效（结果网格展示），定时执行保持小摘要。 */
+    public HealthCheckRun run(Long defId, String triggerType, Map<String, Object> paramOverride, Integer headRows) {
         SqlDefinition def = requireExists(defId);
         DbConnection conn = connectionMapper.selectByKey(def.getConnKey());
         if (conn == null) {
@@ -188,7 +198,13 @@ public class HealthCheckService {
             }
             run.setStatus(status);
             run.setRowCount(qr.getRowCount());
-            run.setResultHead(JsonUtils.truncate(qr.toJson(RESULT_HEAD_ROWS), RESULT_HEAD_MAX_CHARS));
+            boolean manual = TriggerType.MANUAL.name().equals(triggerType);
+            int headRowCount = manual
+                    ? (headRows == null ? MANUAL_HEAD_ROWS_DEFAULT
+                        : Math.max(1, Math.min(headRows, MANUAL_HEAD_ROWS_MAX)))
+                    : RESULT_HEAD_ROWS;
+            int headMaxChars = manual ? MANUAL_HEAD_MAX_CHARS : RESULT_HEAD_MAX_CHARS;
+            run.setResultHead(JsonUtils.truncate(qr.toJson(headRowCount), headMaxChars));
             run.setAssertMsg(assertMsg);
         } catch (BizException e) {
             run.setStatus(e.getErrorCode() == ErrorCode.HC_SQL_TIMEOUT

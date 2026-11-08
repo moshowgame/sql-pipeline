@@ -17,6 +17,7 @@
             <li class="nav-item"><a class="nav-link" href="/connections.html" data-i18n="nav.connections">Connections</a></li>
             <li class="nav-item"><a class="nav-link" href="/health-checks.html" data-i18n="nav.healthChecks">Health Checks</a></li>
             <li class="nav-item"><a class="nav-link active" href="/releases.html" data-i18n="nav.releases">Releases</a></li>
+            <li class="nav-item"><a class="nav-link" href="/console.html" data-i18n="nav.console">SQL Console</a></li>
             <li class="nav-item"><a class="nav-link" href="/notify.html" data-i18n="nav.notify">Alerts</a></li>
             <li class="nav-item"><a class="nav-link" href="/tpam.html" data-i18n="nav.tpam">Temp Accounts</a></li>
         </ul>
@@ -68,6 +69,7 @@
                 <button class="btn btn-outline-primary" id="btnRerun" onclick="doRerun()" data-i18n="rel.btn.rerun">Rerun All</button>
                 <button class="btn btn-outline-info" onclick="openLogs()" data-i18n="rel.btn.logs">SQL Logs</button>
                 <button class="btn btn-outline-info" onclick="openSummaries()" data-i18n="rel.btn.summaries">Run Summaries</button>
+                <button class="btn btn-outline-success" onclick="downloadReport()" data-i18n="rel.btn.report">Report</button>
                 <button class="btn btn-outline-secondary" onclick="loadDetail(currentPlanId, true)" data-i18n="rel.btn.refresh">Refresh</button>
             </div>
         </div>
@@ -107,7 +109,7 @@
                         <label class="form-label" data-i18n="rel.createModal.releaseType">Release Type</label>
                         <select id="cReleaseType" class="form-select form-select-sm" onchange="toggleReleaseType()">
                             <option value="FOLDER" data-i18n="rel.createModal.typeFolder">FOLDER (directory)</option>
-                            <option value="ZIP" data-i18n="rel.createModal.typeZip">ZIP (not implemented)</option>
+                            <option value="ZIP" data-i18n="rel.createModal.typeZip">ZIP (archive)</option>
                         </select>
                     </div>
                     <div class="col-md-5">
@@ -121,6 +123,36 @@
                             <button class="btn btn-outline-info" id="cScanBtn" onclick="doScan()" data-i18n="rel.createModal.scan">Scan</button>
                         </div>
                         <div class="form-text" data-i18n="rel.createModal.releasePathHint"></div>
+                    </div>
+                    <div class="col-12 d-none" id="zipSourcePanel">
+                        <div class="border rounded p-2">
+                            <label class="form-label mb-1" data-i18n="rel.createModal.zipSource">ZIP Source</label>
+                            <div class="btn-group btn-group-sm mb-2" role="group">
+                                <button type="button" class="btn btn-outline-primary active" id="zipSrcLocalBtn" onclick="setZipSource('local')" data-i18n="rel.createModal.zipSourceLocal">Local path</button>
+                                <button type="button" class="btn btn-outline-primary" id="zipSrcNexusBtn" onclick="setZipSource('nexus')" data-i18n="rel.createModal.zipSourceNexus">Nexus</button>
+                            </div>
+                            <div class="d-none" id="nexusInputs">
+                                <div class="row g-2">
+                                    <div class="col-md-8">
+                                        <label class="form-label mb-0 small" data-i18n="rel.createModal.nexusUrl">Nexus zip URL</label>
+                                        <input id="nexusUrl" class="form-control form-control-sm mono" data-i18n-placeholder="rel.createModal.nexusUrlPlaceholder">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label mb-0 small" data-i18n="rel.createModal.nexusUser">Username</label>
+                                        <input id="nexusUser" class="form-control form-control-sm" autocomplete="off">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label mb-0 small" data-i18n="rel.createModal.nexusToken">Token</label>
+                                        <input id="nexusToken" type="password" class="form-control form-control-sm" autocomplete="new-password">
+                                    </div>
+                                </div>
+                                <div class="d-flex align-items-center gap-2 mt-2">
+                                    <button class="btn btn-success btn-sm" id="nexusFetchBtn" onclick="fetchNexusZip()">⇩ <span data-i18n="rel.createModal.nexusFetch">Fetch &amp; Detect</span></button>
+                                    <span class="text-muted small" data-i18n="rel.createModal.nexusFetchHint">Download with Basic Auth (token not saved), unzip and detect step directories automatically.</span>
+                                </div>
+                            </div>
+                            <div class="text-muted small" id="zipLocalHint" data-i18n="rel.createModal.zipLocalHint">Enter the zip file path above (absolute or relative to base-path), then click Scan.</div>
+                        </div>
                     </div>
                 </div>
 
@@ -171,7 +203,14 @@
                     <label class="form-label"><span data-i18n="rel.startModal.remark">Remark</span> <span class="text-danger">*</span></label>
                     <textarea id="sRemark" class="form-control form-control-sm" rows="3" maxlength="512" data-i18n-placeholder="rel.startModal.remarkPlaceholder"></textarea>
                 </div>
-                <div class="text-muted small"><span data-i18n="rel.startModal.starter">Starter: </span><span class="mono" id="startOperator"></span> <span data-i18n="rel.startModal.note"></span></div>
+                <div class="form-check mt-2">
+                    <input class="form-check-input" type="checkbox" id="sDryRun">
+                    <label class="form-check-label" for="sDryRun">
+                        <span class="badge bg-info">DRY RUN</span> <span data-i18n="rel.startModal.dryRun">Dry run (no changes applied)</span>
+                    </label>
+                    <div class="form-text" data-i18n="rel.startModal.dryRunHint"></div>
+                </div>
+                <div class="text-muted small mt-2"><span data-i18n="rel.startModal.starter">Starter: </span><span class="mono" id="startOperator"></span> <span data-i18n="rel.startModal.note"></span></div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal" data-i18n="common.cancel">Cancel</button>

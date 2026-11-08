@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <title>SQL Console - sql-pipeline</title>
+    <link rel="stylesheet" href="/lib/bootstrap-5.2.3/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/lib/codemirror/codemirror.min.css">
+    <link rel="stylesheet" href="/lib/codemirror/theme/material-darker.min.css">
+    <link rel="stylesheet" href="/lib/codemirror/show-hint.min.css">
+    <link rel="stylesheet" href="/lib/codemirror/dialog.min.css">
+    <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<nav class="navbar navbar-expand navbar-dark bg-dark mb-4">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">⇄ sql-pipeline</a>
+        <ul class="navbar-nav me-auto">
+            <li class="nav-item"><a class="nav-link" href="/" data-i18n="nav.dashboard">Dashboard</a></li>
+            <li class="nav-item"><a class="nav-link" href="/connections.html" data-i18n="nav.connections">Connections</a></li>
+            <li class="nav-item"><a class="nav-link" href="/health-checks.html" data-i18n="nav.healthChecks">Health Checks</a></li>
+            <li class="nav-item"><a class="nav-link" href="/releases.html" data-i18n="nav.releases">Releases</a></li>
+            <li class="nav-item"><a class="nav-link active" href="/console.html" data-i18n="nav.console">SQL Console</a></li>
+            <li class="nav-item"><a class="nav-link" href="/notify.html" data-i18n="nav.notify">Alerts</a></li>
+            <li class="nav-item"><a class="nav-link" href="/tpam.html" data-i18n="nav.tpam">Temp Accounts</a></li>
+        </ul>
+        <div class="d-flex align-items-center text-white-50">
+            <span id="navUser" class="me-2 small fw-bold text-white"></span>
+            <button id="logoutBtn" type="button" class="btn btn-outline-light btn-sm" data-i18n="nav.logout">Logout</button>
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <h5 class="mb-3" data-i18n="console.title">SQL Console</h5>
+
+    <div class="card page-card">
+        <div class="card-body">
+            <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                <label class="form-label mb-0 small text-muted" for="connSelect" data-i18n="console.conn">Connection</label>
+                <select id="connSelect" class="form-select form-select-sm" style="width:auto;min-width:220px"></select>
+                <label class="form-label mb-0 small text-muted ms-2" for="maxRowsInput" data-i18n="console.maxRows">Max rows</label>
+                <input id="maxRowsInput" type="number" class="form-control form-control-sm" style="width:100px" value="200" min="1" max="1000">
+                <div class="ms-auto btn-group btn-group-sm">
+                    <button id="btnRun" class="btn btn-success" onclick="runSql()" title="Ctrl+Enter">▶ <span data-i18n="console.run">Run</span></button>
+                    <button class="btn btn-outline-secondary" onclick="toggleConsoleTheme()" title="Light / dark theme">◐</button>
+                </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#historyPanel" aria-expanded="false">
+                    🕘 <span data-i18n="console.history">History</span> <span id="historyCount" class="badge bg-secondary"></span>
+                </button>
+                <button class="btn btn-outline-danger btn-sm" type="button" onclick="clearHistory()" data-i18n="console.clearHistory">Clear history</button>
+                <span class="text-muted small ms-2" data-i18n="console.hint">SELECT only · multiple statements allowed · Ctrl+Enter to run</span>
+            </div>
+            <div class="collapse mb-2" id="historyPanel">
+                <div class="border rounded p-2 bg-light" style="max-height:200px;overflow-y:auto">
+                    <ul class="list-unstyled mb-0 small" id="historyList"></ul>
+                </div>
+            </div>
+            <textarea id="consoleSql" class="form-control form-control-sm sql-text" rows="6"
+                      placeholder="SELECT * FROM t LIMIT 10;"></textarea>
+            <div id="consoleResults" class="mt-3"></div>
+        </div>
+    </div>
+</div>
+
+<footer class="app-footer">
+    <span data-i18n="footer.openBy">Open source by</span> <a href="https://zhengkai.blog.csdn.net/" target="_blank" rel="noopener"><strong data-i18n="footer.author">Moshow</strong></a>
+    <span class="sep">|</span><a href="https://github.com/moshowgame/sql-pipeline" target="_blank" rel="noopener" data-i18n="footer.github">GitHub</a>
+    <span class="sep">|</span><a href="https://zhengkai.blog.csdn.net/" target="_blank" rel="noopener" data-i18n="footer.csdn">CSDN Blog</a>
+    <span class="sep">|</span><span data-i18n="footer.license">MIT License</span>
+</footer>
+<script src="/lib/jquery/jquery-3.7.1.min.js"></script>
+<script src="/lib/bootstrap-5.2.3/js/bootstrap.bundle.min.js"></script>
+<script src="/lib/codemirror/codemirror.min.js"></script>
+<script src="/lib/codemirror/sql.min.js"></script>
+<script src="/lib/codemirror/show-hint.min.js"></script>
+<script src="/lib/codemirror/sql-hint.min.js"></script>
+<script src="/lib/codemirror/matchbrackets.min.js"></script>
+<script src="/lib/codemirror/comment.min.js"></script>
+<script src="/lib/codemirror/searchcursor.min.js"></script>
+<script src="/lib/codemirror/search.min.js"></script>
+<script src="/lib/codemirror/dialog.min.js"></script>
+<script src="/js/common.js"></script>
+<script src="/js/i18n.js"></script>
+<script src="/js/sql-editor.js"></script>
+<script src="/js/result-grid.js"></script>
+<script src="/js/console.js"></script>
+</body>
+</html>

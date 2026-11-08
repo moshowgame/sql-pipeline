@@ -12,7 +12,7 @@ public class ReleasePlan {
     /** release_20261003 */
     private String planName;
     private String basePath;
-    /** FOLDER（release_path 为目录）| ZIP（release_path 为 zip 包，解压暂未实现）。 */
+    /** FOLDER（release_path 为目录）| ZIP（release_path 为 zip 包，解压缓存于 base-path/zip-cache）。 */
     private String releaseType;
     /** 发布路径：可指定 share folder 的绝对/相对路径（相对时基于全局 base-path 解析）。 */
     private String releasePath;
@@ -27,6 +27,8 @@ public class ReleasePlan {
     private LocalDateTime startedAt;
     private LocalDateTime finishedAt;
     private Integer rerunCount;
+    /** Dry-Run 预演执行：变更 SQL 不落库仅记录 PLANNED，verify_sql 真实执行后回滚预检。 */
+    private Boolean dryRun;
     private String createdBy;
     private LocalDateTime createdAt;
 }

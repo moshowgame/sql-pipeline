@@ -125,7 +125,8 @@ window.App = {
         const WRITE_FNS = ['openCreate(', 'openEdit(', 'saveConn(', 'savePlan(', 'saveDef(', 'saveChannel(',
             'testConn(', 'reloadConn(', 'toggleConn(', 'toggleDef(', 'testChannel(', 'deleteChannel(', 'deleteConn(',
             'openStart(', 'doStart(', 'doContinue(', 'doRerun(', 'retryFromModal(', 'confirmFromModal(', 'editPlan(',
-            'doRun(', 'runDef(', 'doScan(', 'addStepRow(', 'tpamGrant(', 'tpamRevoke('];
+            'doRun(', 'runDef(', 'doScan(', 'addStepRow(', 'tpamGrant(', 'tpamRevoke(', 'runSelectedSql(',
+            'runSql('];
         const sel = WRITE_FNS.map(f => '[onclick*="' + f + '"]').join(',');
         const hideAll = function () {
             document.querySelectorAll(sel).forEach(function (el) { el.style.display = 'none'; });
