@@ -32,6 +32,17 @@ public class AuthProperties {
     /** 认证 Cookie 名。 */
     private String cookieName = "AUTH_TOKEN";
 
+    /** self-TPAM 自助临时账号配置：输入 CR/IN 单号 + staffid，生成限时账号（support 场景）。 */
+    private Tpam tpam = new Tpam();
+
+    @Data
+    public static class Tpam {
+        /** 是否开放自助临时账号申请。 */
+        private boolean enabled = true;
+        /** 临时账号默认有效期（小时）。 */
+        private int ttlHours = 4;
+    }
+
     /**
      * 内置用户（用户名 -> 明文密码）：启动时不存在则自动创建，密码入库前经 PasswordEncryptor 加密。
      * 快速添加用户只需在此加一行，例如 dev: dev123。

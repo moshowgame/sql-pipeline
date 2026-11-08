@@ -30,6 +30,7 @@ public class DefaultUserSeeder {
             user.setUsername(username);
             user.setPasswordHash(passwordEncryptor.encrypt(rawPassword));
             user.setDisplayName(username);
+            user.setRole("ADMIN");
             user.setEnabled(1);
             user.setCreatedAt(LocalDateTime.now());
             userStore.createUser(user);

@@ -35,6 +35,10 @@ public enum ErrorCode {
     AU_UNAUTHORIZED("AU0001", 401, "未登录或登录已过期"),
     AU_LOGIN_FAILED("AU0002", 401, "用户名或密码错误"),
     AU_USER_DISABLED("AU0003", 403, "用户已被禁用"),
+    AU_READ_ONLY("AU0004", 403, "只读账号无权执行此操作"),
+    AU_TPAM_EXISTS("AU0005", 409, "临时账号已存在，请等待其过期回收后重新申请"),
+    AU_TPAM_INVALID("AU0006", 400, "临时账号申请参数非法"),
+    AU_TPAM_EXPIRED("AU0007", 403, "临时账号已过期，请联系管理员重新申请"),
 
     RL_SCAN_FAILED("RL0007", 500, "目录扫描失败"),
     RL_PLAN_BUSY("RL0008", 409, "计划正在被其他操作处理"),

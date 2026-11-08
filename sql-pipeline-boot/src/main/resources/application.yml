@@ -75,6 +75,11 @@ sql-pipeline:
     default-users:
       admin: admin123
       dev: dev123
+    # self-TPAM 自助临时账号：管理员输入 CR/IN 单号 + staffid，生成 staffid_tpam 限时账号（support 场景）
+    tpam:
+      enabled: true
+      # 临时账号有效期（小时），默认 4 小时，到点自动回收删除
+      ttl-hours: 4
 
 logging:
   level:

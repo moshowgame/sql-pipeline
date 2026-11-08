@@ -5,6 +5,8 @@
  */
 window.App = {
     operator: localStorage.getItem('operator') || 'admin',
+    /** 当前用户角色：ADMIN 可读写 / VIEWER 只读（support 查询）。 */
+    role: (localStorage.getItem('role') || 'ADMIN').toUpperCase(),
 
     /** 统一 REST 请求，返回 jqXHR；失败（非 2xx 或 code!=0）以 toast 提示 */
     api(method, url, data) {
@@ -105,14 +107,38 @@ window.App = {
         const $user = $('#navUser');
         if ($user.length) {
             $user.text(App.operator);
+            if (App.role === 'VIEWER') {
+                $user.after('<span class="badge bg-secondary ms-1">VIEWER</span>');
+            }
         }
         $('#logoutBtn').on('click', App.logout);
+        App.enforceReadOnly();
+    },
+
+    /**
+     * 只读角色前端兜底：隐藏全部写操作入口（后端仍有方法级 403 拦截，此处纯 UX）。
+     * 写按钮均带 onclick 调用写函数，按函数名选择器统一隐藏；
+     * 行内按钮多为数据加载后动态渲染，用 MutationObserver 持续生效。
+     */
+    enforceReadOnly() {
+        if (App.role !== 'VIEWER') return;
+        const WRITE_FNS = ['openCreate(', 'openEdit(', 'saveConn(', 'savePlan(', 'saveDef(', 'saveChannel(',
+            'testConn(', 'reloadConn(', 'toggleConn(', 'toggleDef(', 'testChannel(', 'deleteChannel(', 'deleteConn(',
+            'openStart(', 'doStart(', 'doContinue(', 'doRerun(', 'retryFromModal(', 'confirmFromModal(', 'editPlan(',
+            'doRun(', 'runDef(', 'doScan(', 'addStepRow(', 'tpamGrant(', 'tpamRevoke('];
+        const sel = WRITE_FNS.map(f => '[onclick*="' + f + '"]').join(',');
+        const hideAll = function () {
+            document.querySelectorAll(sel).forEach(function (el) { el.style.display = 'none'; });
+        };
+        hideAll();
+        new MutationObserver(hideAll).observe(document.body, { childList: true, subtree: true });
     },
 
     /** 登出：吊销服务端 Token 并回登录页 */
     logout() {
         $.post('/api/auth/logout').always(function () {
             localStorage.setItem('operator', '');
+            localStorage.setItem('role', '');
             location.replace('/login.html');
         });
     },

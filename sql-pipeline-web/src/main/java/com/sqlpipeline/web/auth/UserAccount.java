@@ -15,6 +15,18 @@ public class UserAccount {
 
     private String displayName;
 
+    /** 角色：ADMIN 可读写 / VIEWER 只读。 */
+    private String role;
+
+    /** 临时账号(self-TPAM)失效时间；NULL 表示永久账号。 */
+    private LocalDateTime expiresAt;
+
+    /** 临时账号关联的 CR/IN 变更单号。 */
+    private String crInNo;
+
+    /** 临时账号申请人的 staffid。 */
+    private String staffId;
+
     /** 1 启用 / 0 禁用。 */
     private Integer enabled;
 

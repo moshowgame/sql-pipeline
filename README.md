@@ -3,7 +3,7 @@
 [![GitHub](https://img.shields.io/badge/GitHub-moshowgame%2Fsql--pipeline-181717?logo=github)](https://github.com/moshowgame/sql-pipeline)
 [![CSDN](https://img.shields.io/badge/CSDN-zhengkai.blog.csdn.net-cf1322?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiI+PHRleHQgeD0iOCIgeT0iMTIiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkM8L3RleHQ+PC9zdmc+)](https://zhengkai.blog.csdn.net/)
 
-SQL 健康检查与发布编排平台：只读守卫（SqlGuard）、定时健康检查、Release Plan/Runbook（按目录顺序的发布编排 + Pipeline 可视化）、WAIT/CONTINUE 人工卡点、xMatters 告警通知。
+SQL 健康检查与发布编排平台：只读守卫（SqlGuard）、定时健康检查、Release Plan/Runbook（按目录顺序的发布编排 + Pipeline 可视化 + verify_sql 提交前验证卡点）、WAIT/CONTINUE 人工卡点、xMatters 告警通知；登录认证 + 只读角色（VIEWER）权限分级、Self-TPAM 自助临时账号（CR/IN 单号 + staffid 限时发号）。
 
 > 按技术设计文档 `tech_design.md`（v1.1，与实现同步）实现。**平台元数据库与目标业务库均以 PostgreSQL 为主**（一期不考虑 Oracle / MySQL）。
 
@@ -33,10 +33,11 @@ SQL 健康检查与发布编排平台：只读守卫（SqlGuard）、定时健�
 
 | 模块 | 能力 |
 |---|---|
-| 数据源管理 | 平台内定义 PostgreSQL 连接（可指定默认 Schema，支持 share folder 目标库），HikariCP 连接池运行期动态注册 / 热更新 / 连通性测试；密码 AES-256-GCM 加密存储，接口仅返回掩码 |
+| 数据源管理 | 平台内定义 PostgreSQL 连接（可指定默认 Schema，支持 share folder 目标库），HikariCP 连接池运行期动态注册 / 热更新 / 连通性测试；密码 AES-256-GCM 加密存储，接口仅返回掩码；连接池容量预算校验（同一目标库 pool_size 总和 ≤ 预算，超限 DS0004 409）、大结果集流式读取（fetchSize 游标分批拉取）、连接测试 pg_roles 只读账号探测提示 |
 | 健康检查 | 只读 SQL（JSqlParser AST 级 SELECT-only 校验，保存与执行双重拦截 + `setReadOnly` 兜底）、`${name}` 命名参数占位符、简化断言（VALUE/ROWS + 操作符 + 期望值）、Spring Cron 动态调度、修改记录（版本快照）与执行记录 |
-| Release Plan/Runbook | Release Type（FOLDER / ZIP 占位）+ Release Path（可指定 share folder）、SCAN 自动生成可重编号的步骤、Pipeline 可视化（横向/纵向）、DRAFT 可编辑 / 运行后只读、CR Number + Remark 启动、异步驱动、WAIT/CONTINUE 人工卡点、单步重试（含备注审计）、全流程重跑（UAT 计时摘要）、SSE 进度推送 |
+| Release Plan/Runbook | Release Type（FOLDER / ZIP 占位）+ Release Path（可指定 share folder）、SCAN 自动生成可重编号的步骤、Pipeline 可视化（横向/纵向）、DRAFT 可编辑 / 运行后只读、CR Number + Remark 启动、异步驱动、WAIT/CONTINUE 人工卡点、**verify_sql 提交前验证卡点**、单步重试（含备注审计）、全流程重跑（UAT 计时摘要）、SSE 进度推送、**大批量失败聚合展示**（按错误指纹折叠 + 分页） |
 | 告警通知 | xMatters API 通道（NONE/BASIC/API_KEY 认证）、订阅 HC_FAIL / RELEASE_STEP_FAIL / PLAN_FAIL / RELEASE_STEP_SUCCESS / PLAN_COMPLETED、健康检查连败阈值、推送日志（notify_log） |
+| 账号与权限 | 登录认证（HMAC Token，登出即吊销）、角色 ADMIN / VIEWER（只读角色写操作前后端双重拦截）、**Self-TPAM 自助临时账号**（CR/IN 单号 + staffid → `staffid_tpam`，32 位随机密码仅展示一次，默认 4 小时过期自动回收） |
 | 国际化 | 界面与错误消息 English（默认）/ 简体中文，导航栏一键切换 |
 
 ## SCREENCAP
@@ -46,6 +47,21 @@ SQL 健康检查与发布编排平台：只读守卫（SqlGuard）、定时健�
 <image src="./screencap/health_check_edit.png">
 <image src="./screencap/release_plan.png">
 <image src="./screencap/release_detail.png">
+
+## 更新日志
+
+当前版本：**v1.1**（与 `tech_design.md` v1.1 同步）。
+
+### 2026-11 —— P0 优化、权限分级与 Self-TPAM 📈
+
+- **2026-11-08**：新增 **Self-TPAM 自助临时账号**：管理员输入 CR/IN 变更单号 + 申请人 staffid（必须是系统中不存在的账号），一键生成 `staffid_tpam` 临时账号——32 位随机密码（仅申请响应返回一次，弹窗展示 + 一键复制）、默认 4 小时有效、角色可选 ADMIN / VIEWER；过期自动回收（5 分钟定时删除，释放 staffid 可重新申请）、支持提前吊销；CR/IN 单号随账号入库 + 申请/吊销/回收应用日志审计；过期账号登录直接拒绝；新增 `/tpam.html` 页面与 `/api/auth/tpam/grant|revoke|list` 接口（`sql-pipeline.auth.tpam.*` 可配开关与时长）
+- **2026-11-08**：登录认证与**只读角色**：`platform_user` 表 + HMAC Token 认证（登出即吊销、应用重启全部失效），角色 ADMIN / VIEWER——VIEWER 仅可 GET 查询，写操作（start/retry/编辑等 POST/PUT/DELETE）后端 403（AU0004）+ 前端写按钮统一隐藏（MutationObserver 覆盖动态渲染）；右上角显示角色徽章；yml `default-users` 快速内置账号；为 support team 提供"能查不能动"的查询模式
+- **2026-11-08**：**大批量脚本失败展示优化**（600+600 文件、数百失败不再挤爆页面）：SQL 明细日志接口支持 `status=FAIL` 过滤 + 分页（50/页）；步骤详情改为"仅失败（默认）/ 全部"双 Tab——失败视图按错误指纹（errorMsg）**聚合折叠**，400 条失败若只有 3 类根因就只显示 3 行组头，展开才见文件清单；顶部概览条 `失败 100 / 600 · 3 类错误`；Pipeline 失败节点直接显示 `✗ 100/600` 比例；新增 `/api/releases/{id}/logs/stats` 各步骤失败统计接口
+- **2026-11-08**：**P0 — PostgreSQL 化的直接红利与缺陷修复**：
+  - **verify_sql 提交前验证卡点**：步骤可配置 verify_sql（只读 SELECT），事务模式下所有语句执行完、COMMIT 之前在**同一事务内**执行，返回 ≥1 行才放行提交，否则整体回滚；start 时经 SqlGuard fail-fast 校验、执行前复核；非事务模式（`_nontransactional`）跳过并告警；结果记入 `(verify_sql)` 虚拟文件日志可追溯
+  - **流式读取**：查询连接补 `setFetchSize`（autoCommit=false 前提下 pgjdbc 走游标分批拉取），大结果集不再整包载入内存（原缺陷：fetchSize 在 autoCommit=true 下失效）
+  - **只读账号探测**：连接测试成功后查 `pg_roles`，账号具备 superuser / createrole / createdb / replication 权限时追加"建议改用仅 GRANT SELECT 的专用只读账号"提示
+  - **连接池容量预算**：同一规范化 jdbc_url 的所有启用连接 `pool_size` 总和 ≤ `pool-budget-per-url`（默认 20），连接创建/更新写路径硬校验（DS0004 409）+ 启动注册软告警（提示下调 pool_size 或引入 PgBouncer）；默认 pool_size 10 → 8
 
 ## 模块结构（对齐设计文档 §17.2）
 
@@ -93,7 +109,7 @@ RELEASE_BASE_PATH=$(pwd)/sample/releases \
 java -jar sql-pipeline-boot/target/sql-pipeline-boot-1.0.0-SNAPSHOT.jar
 ```
 
-启动后访问 `http://localhost:8080`（Web 管理界面）、`http://localhost:8080/api/**`（REST API）、`http://localhost:8080/actuator/prometheus`（指标）。
+启动后访问 `http://localhost:8080`（Web 管理界面，默认账号 `admin/admin123` / `dev/dev123`，见 yml `default-users`——**首次部署请立即修改**）、`http://localhost:8080/api/**`（REST API，需登录）、`http://localhost:8080/actuator/prometheus`（指标）。
 
 ## Web 管理界面
 
@@ -101,13 +117,15 @@ java -jar sql-pipeline-boot/target/sql-pipeline-boot-1.0.0-SNAPSHOT.jar
 
 | 页面 | 功能 |
 |---|---|
+| `/login.html` | 登录页（HMAC Token 认证；`default-users` 内置账号，详见"账号与权限"） |
 | `/`（总览） | 连接 / 健康检查 / 发布计划数量卡片、最近发布计划、平台健康状态 |
-| `/connections.html` | 连接 CRUD（密码留空=不变、connKey 不可改、可配置默认 Schema）、连通性测试、连接池重载、启停（热更新） |
+| `/connections.html` | 连接 CRUD（密码留空=不变、connKey 不可改、可配置默认 Schema）、连通性测试（含 pg_roles 只读账号探测提示）、连接池重载、启停（热更新）；同一目标库连接池容量预算硬校验 |
 | `/health-checks.html` | 定义 CRUD（`${name}` 命名参数、简化断言三要素）、手动执行（参数覆盖）、执行记录分页、修改历史（版本快照）、启停调度 |
-| `/releases.html` | Release Plan/Runbook：计划列表（View / Edit 按钮，Edit 仅 DRAFT）、创建（类型/路径/默认连接 + SCAN 生成可重编号步骤）、**Pipeline 可视化（横向/纵向切换、分段进度条、人工卡点标记、节点点击查看运行结果与 SQL 明细）**、启动（CR+备注）、WAIT 人工继续（记录确认人）、失败单步重试（含备注）、全流程重跑、SQL 明细日志（按步骤/轮次过滤）、UAT 运行摘要、SSE 实时刷新 |
+| `/releases.html` | Release Plan/Runbook：计划列表（View / Edit 按钮，Edit 仅 DRAFT）、创建（类型/路径/默认连接 + SCAN 生成可重编号步骤 + **verify_sql 列配置**）、**Pipeline 可视化（横向/纵向切换、分段进度条、人工卡点标记、失败节点 ✗ 失败/总数比例、节点点击查看运行结果）**、步骤详情"仅失败/全部"双 Tab（失败按错误指纹聚合折叠 + 分页）、启动（CR+备注）、WAIT 人工继续（记录确认人）、失败单步重试（含备注）、全流程重跑、SQL 明细日志（按步骤/轮次/状态过滤 + 分页）、UAT 运行摘要、SSE 实时刷新 |
 | `/notify.html` | 告警通道 CRUD（xMatters URL、认证方式、订阅事件、连败阈值）、通道连通性测试、推送日志 |
+| `/tpam.html` | Self-TPAM 自助临时账号：CR/IN 单号 + staffid + 角色一键发号、密码一次性展示（复制）、现存临时账号列表（剩余时间/过期状态）、提前吊销 |
 
-右上角「操作者」输入框对应请求头 `X-Operator`（localStorage 持久化）：发布步骤指定了执行者时，启动/继续/重试会以该身份校验。
+登录后右上角显示当前用户与角色徽章（ADMIN / VIEWER）；VIEWER 只读角色的写按钮统一隐藏，后端同样拦截（403 AU0004）。
 
 ## 国际化（i18n）
 
@@ -117,6 +135,35 @@ java -jar sql-pipeline-boot/target/sql-pipeline-boot-1.0.0-SNAPSHOT.jar
 - 后端：标准 Spring `MessageSource`（`messages.properties` 英文默认 + `messages_zh.properties` 中文），所有 `BizException` 支持 messageKey + args，由 `GlobalExceptionHandler` 按当前 locale 渲染。
 - 语言选择同步机制：前端切换时写入 `LANG` Cookie；后端由 `CookieLocaleResolver`（默认 `Locale.ENGLISH`）+ `LocaleChangeInterceptor`（支持 `?lang=zh`）解析。
 - 新增文案：前端在 i18n.js 两个字典中补同名 key；后端在两份 messages 文件中新增 `error.*` 键，抛出时使用 `BizException.i18n(ErrorCode.X, "error.xxx", args...)`。
+
+## 账号与权限
+
+### 登录认证
+
+- 账号存 `platform_user` 表（BCrypt 密文），登录签发 **HMAC Token**（`base64url(username).base64url(role).过期毫秒.签名` + 内存缓存）：登出即吊销、应用重启全部失效、签名仅防伪造；角色随 Token 携带，免每请求查库
+- API 认证支持 Cookie（登录页自动携带）或 `Authorization: Bearer <token>`；`X-Operator` 头继续作为操作者身份（发布步骤指定执行者时的校验依据）
+- `sql-pipeline.auth.default-users` 内置账号（key=用户名，value=密码，启动时不存在则自动创建，入库前 BCrypt 加密），默认 `admin/admin123`、`dev/dev123`——**首次部署请立即修改**
+
+### 只读角色（VIEWER）
+
+- `role = ADMIN / VIEWER`：VIEWER 仅放行 GET/HEAD/OPTIONS 与登出，任何写操作（start/retry/编辑等）后端 403（AU0004）——为 support team 提供"能查不能动"的查询模式
+- 前端同步兜底：VIEWER 登录后写按钮（创建/编辑/启动/重试/吊销等）统一隐藏（MutationObserver 覆盖动态渲染的行内按钮），右上角显示 VIEWER 徽章
+- 建 support 账号：
+
+```sql
+INSERT INTO platform_user (username, password_hash, display_name, role, enabled)
+VALUES ('support01', '<bcrypt-hash>', 'Support Team', 'VIEWER', 1);
+```
+
+### Self-TPAM 自助临时账号
+
+面向 support / 变更场景的限时发号：管理员在 `/tpam.html` 输入 **CR/IN 变更单号 + 申请人 staffid**，选择角色（ADMIN 读写 / VIEWER 只读），生成 `staffid_tpam` 临时账号：
+
+- **必须是不存在的账号**：staffid 校验字母/数字/`-`/`_`，账号已存在直接拒绝（AU0005），避免覆盖正式用户
+- **32 位随机密码**（SecureRandom，大小写+数字）：仅申请响应返回一次，弹窗展示 + 一键复制，不落日志
+- **4 小时有效**（`ttl-hours` 可调）：三重保障——登录时过期即拒（AU0007）、5 分钟定时任务删除回收、支持提前吊销；回收后 staffid 可重新申请
+- **审计**：CR/IN 单号 + staffid 随账号入库（`platform_user.cr_in_no / staff_id / expires_at`），申请/吊销/回收动作记录应用日志（含操作人）
+- 申请/吊销是写操作，VIEWER 自动 403——只有 ADMIN 能发号；`sql-pipeline.auth.tpam.enabled: false` 可整体关闭
 
 ## 配置说明
 
@@ -132,6 +179,14 @@ java -jar sql-pipeline-boot/target/sql-pipeline-boot-1.0.0-SNAPSHOT.jar
 | `sql-pipeline.release.step-total-timeout-sec` | `3600` | 单步骤总超时（0 = 不限制） |
 | `sql-pipeline.release.driver-pool-size` | `2` | 异步驱动线程池大小 |
 | `sql-pipeline.release.driver-queue-capacity` | `200` | 驱动队列容量（满时退化为调用线程执行） |
+| `sql-pipeline.datasource.pool-budget-per-url` | `20` | 同一目标库（规范化 jdbc_url）连接池总容量预算，连接创建/更新超限报 DS0004 409 |
+| `sql-pipeline.datasource.fetch-size` | `500` | 查询流式读取批大小（autoCommit=false + fetchSize 走 pgjdbc 游标分批拉取） |
+| `sql-pipeline.datasource.default-pool-size` | `8` | 新建连接默认 pool_size |
+| `sql-pipeline.auth.enabled` | `true` | 登录认证总开关（关闭后 API 免登录，仅限内网调试） |
+| `sql-pipeline.auth.token-ttl` | `24h` | 登录 Token 有效期（内存缓存，登出即吊销、重启全失效） |
+| `sql-pipeline.auth.default-users.*` | admin / dev | 启动时自动创建的内置账号（key=用户名，value=密码，BCrypt 入库） |
+| `sql-pipeline.auth.tpam.enabled` | `true` | Self-TPAM 自助临时账号开关 |
+| `sql-pipeline.auth.tpam.ttl-hours` | `4` | Self-TPAM 临时账号有效期（小时），到点定时回收删除 |
 | `sql-pipeline.health.scheduler.pool-size` | `8` | 健康检查调度线程池（Boot 默认 1，必须显式设置） |
 | `sql-pipeline.health.default-timeout-sec` | `30` | 健康检查 SQL 默认超时 |
 | `sql-pipeline.health.default-max-rows` | `1000` | 默认最大返回行数（取连接配置 max_rows 优先） |
@@ -147,7 +202,7 @@ java -jar sql-pipeline-boot/target/sql-pipeline-boot-1.0.0-SNAPSHOT.jar
 
 **编辑权限**：计划列表每行有 View / Edit 按钮——**仅 DRAFT 状态可编辑**（Release Type/Path/默认连接/步骤配置；planName 创建后锁定），一旦启动过（RUNNING/WAITING/COMPLETED/FAILED/SKIPPED）只能 View（全只读弹窗）。
 
-**Pipeline 可视化**：详情页步骤渲染为事件节点流（横向/纵向切换、分段进度条、`⏸ Manual gate` 人工卡点标记、状态色图例），点击节点查看该步骤的运行结果与 SQL 明细（前 100 行）；RUNNING 节点呼吸动画，SSE 驱动实时刷新。
+**Pipeline 可视化**：详情页步骤渲染为事件节点流（横向/纵向切换、分段进度条、`⏸ Manual gate` 人工卡点标记、状态色图例），失败节点直接显示 `✗ 失败数/总数`；点击节点查看该步骤的运行结果与 SQL 明细——默认"仅失败"Tab 并**按错误指纹聚合折叠**（同根因的几百条失败合并为一行组头，展开见文件清单），可切换"全部"Tab（分页浏览）；RUNNING 节点呼吸动画，SSE 驱动实时刷新。
 
 ### 发布目录约定
 
@@ -167,15 +222,36 @@ java -jar sql-pipeline-boot/target/sql-pipeline-boot-1.0.0-SNAPSHOT.jar
 - **异步驱动**：start/continue/retry/rerun 的 HTTP 请求仅完成校验与元数据写入后立即返回，实际执行在 `release-driver` 线程池进行，进度经 SSE 推送（`sql-pipeline.release.driver-pool-size` / `driver-queue-capacity`）。
 - **plan 级互斥（PG advisory lock）**：同一计划的驱动操作串行化，应用崩溃锁自动释放，天然支持多实例部署（持锁期间占用一个平台库连接）。
 - **步骤事务**：一个目录 = 一个事务，失败整目录回滚。若目录内放置**空的 `_nontransactional` 标记文件**，该步骤逐条自动提交、失败不回滚——用于 `CREATE INDEX CONCURRENTLY` 等 PostgreSQL 非事务 DDL（事务模式下出现 CONCURRENTLY 会直接拒绝并提示）。
+- **verify_sql 提交前验证卡点**：步骤可配置只读 SELECT（步骤配置 Verify SQL 列，start 时经 SqlGuard 校验），事务模式下所有语句执行完、COMMIT 之前在**同一事务内**执行——返回 ≥1 行才放行提交，0 行则整体回滚（RL 错误提示），防止"语句跑完但没生效"的静默失败；非事务模式跳过并告警；验证结果记入 `(verify_sql)` 虚拟文件日志。
+- **流式读取**：SQL 明细查询经 autoCommit=false + `setFetchSize`（`sql-pipeline.datasource.fetch-size`）走 pgjdbc 游标分批拉取，大批量脚本（600+ 文件）的结果集不再整包进内存。
 - **步骤总超时**：`sql-pipeline.release.step-total-timeout-sec`（默认 3600，0 = 不限制），语句间检查，超时回滚置 FAIL。
 - **脚本变更检测**：start 时记录各步骤脚本内容 SHA-256，详情页对当前目录实时对比，变更显示「脚本已变更 ⚠」。
 - **确认与重试审计**：WAIT 步骤 continue 时记录确认人/时间（confirm_by/confirm_at）；retry 支持可选备注（retry_remark）。
-- **日志轮次**：SQL 明细日志带 run_seq 与 operator，可按轮次过滤查看；失败与成功的运行均生成运行摘要。
+- **日志轮次**：SQL 明细日志带 run_seq 与 operator，可按轮次/状态（`status=FAIL`）过滤查看（前端分页 50/页）；失败与成功的运行均生成运行摘要。
 - **成功事件**：通道可订阅 `RELEASE_STEP_SUCCESS` / `PLAN_COMPLETED`（默认只订阅失败事件），与失败事件共用 xMatters 推送链路。
 
 ## API 一览
 
-统一响应体：`{"code":"0","message":"ok","data":{},"traceId":"..."}`；操作者身份经请求头 `X-Operator` 传递（一期无登录态）。
+统一响应体：`{"code":"0","message":"ok","data":{},"traceId":"..."}`；API 需登录（Cookie 或 `Authorization: Bearer <token>`），VIEWER 角色仅可 GET；操作者身份另经请求头 `X-Operator` 传递（发布步骤执行者校验）。
+
+### 认证与账号 `/api/auth`
+
+```bash
+# 登录（default-users 内置账号；返回 token，后续请求携带）
+curl -s -X POST localhost:8080/api/auth/login -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"admin123"}'
+
+curl -s localhost:8080/api/auth/me -H 'Authorization: Bearer <token>'   # 当前用户（username/displayName/role）
+
+# Self-TPAM：申请临时账号（仅 ADMIN；生成 ZHANGS01_tpam + 32 位随机密码，密码仅本次响应返回，4 小时过期）
+curl -s -X POST localhost:8080/api/auth/tpam/grant -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"crInNo":"CR-20261108-001","staffId":"ZHANGS01","role":"VIEWER"}'
+
+curl -s localhost:8080/api/auth/tpam/list -H 'Authorization: Bearer <token>'              # 现存临时账号
+curl -s -X POST localhost:8080/api/auth/tpam/revoke -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' -d '{"username":"ZHANGS01_tpam"}'                   # 提前吊销
+```
 
 ### 连接管理 `/api/connections`
 
@@ -320,7 +396,7 @@ Health Check 的"仅 SELECT"由四层防线保证，任何一层被绕过都有�
 | L1 | 保存定义时 | JSqlParser AST 解析，非 SELECT（INSERT/UPDATE/DELETE/DROP/`SELECT INTO` 等）直接拒绝（SG0002），脏数据不入库 |
 | L2 | 每次执行前 | 同样的 AST 校验再跑一遍——防止历史脏数据或绕过 API 直改数据库后残留的 SQL |
 | L3 | 执行连接层 | 查询包裹在 **`BEGIN TRANSACTION READ ONLY`** 显式只读事务中，由 PostgreSQL 服务端强制——即使是 `SELECT nextval()` 这类带副作用的函数也会报错；事务结束即 ROLLBACK，零副作用 |
-| L4 | 目标库账号 | 推荐为巡检使用只读账号（`GRANT SELECT`），从数据库权限层兜底 |
+| L4 | 目标库账号 | 推荐为巡检使用只读账号（`GRANT SELECT`），从数据库权限层兜底；连接测试会查 `pg_roles` 探测，账号为超级用户或可创建对象时提示改用专用只读账号 |
 
 L1/L2 的 AST 校验基于 JSqlParser，解析失败同样拒绝（fail-closed）；SqlSplitter 正确处理字符串/dollar-quote 内的分号与注释，无法借注释或字符串拼接绕过。L3 在显式只读事务内执行，`UPDATE`/`DELETE`/`INSERT`/`nextval()` 等任何写操作都会被 PostgreSQL 报错（如"cannot execute nextval() in a read-only transaction"）。
 
@@ -345,6 +421,9 @@ L1/L2 的 AST 校验基于 JSqlParser，解析失败同样拒绝（fail-closed�
 | 10 | `release_step` 增加 `confirm_by/at`、`retry_remark`、`script_hash`；`release_sql_log` 增加 `step_no`、`run_seq`、`operator` | 人工确认/重试审计、脚本变更检测、多轮日志区分 |
 | 11 | 新增文档未覆盖的 `notify_channel` / `notify_log` 表与 xMatters 告警模块 | 需求方新增的告警通知能力（含成功事件） |
 | 12 | 新增文档未覆盖的 i18n（English 默认 / 简体中文，前后端全量） | 需求方新增 |
+| 13 | `release_step` 增加 `verify_sql` 列；事务模式 COMMIT 前在同一事务内执行只读验证（≥1 行放行、0 行回滚），结果记 `release_sql_log`（file_name=`(verify_sql)`） | P0 优化：防止"语句跑完但没生效"的静默失败 |
+| 14 | 新增连接池容量预算：同一规范化 jdbc_url 的 `pool_size` 总和 ≤ `sql-pipeline.datasource.pool-budget-per-url`（默认 20），写路径硬校验 DS0004 409 + 启动软告警；默认 pool_size 10→8 | P0 优化：防止多连接叠加打爆目标库 |
+| 15 | 新增登录认证（`platform_user` + HMAC Token）与角色 ADMIN/VIEWER（VIEWER 写操作 403）；新增 Self-TPAM 临时账号（`expires_at/cr_in_no/staff_id` 列、5 分钟过期回收任务） | 需求方新增：support team 只读查询模式与变更场景限时发号 |
 
 ## 已知约束
 

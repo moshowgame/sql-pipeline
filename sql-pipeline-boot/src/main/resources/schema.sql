@@ -345,11 +345,23 @@ CREATE TABLE IF NOT EXISTS platform_user (
     username      VARCHAR(64)  PRIMARY KEY,
     password_hash VARCHAR(100) NOT NULL,
     display_name  VARCHAR(64),
+    role          VARCHAR(16)  NOT NULL DEFAULT 'ADMIN',
     enabled       SMALLINT     NOT NULL DEFAULT 1,
     created_at    TIMESTAMP    NOT NULL DEFAULT now(),
     updated_at    TIMESTAMP    NOT NULL DEFAULT now()
 );
 
+-- 存量库兼容：补建 role 列（新库由 CREATE TABLE 直接创建）
+ALTER TABLE platform_user ADD COLUMN IF NOT EXISTS role VARCHAR(16) NOT NULL DEFAULT 'ADMIN';
+-- self-TPAM 临时账号三列：有效期到点（NULL=永久账号）、关联变更单号、申请人 staffid
+ALTER TABLE platform_user ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP;
+ALTER TABLE platform_user ADD COLUMN IF NOT EXISTS cr_in_no  VARCHAR(64);
+ALTER TABLE platform_user ADD COLUMN IF NOT EXISTS staff_id  VARCHAR(64);
+
 COMMENT ON TABLE  platform_user             IS '平台用户（登录认证），密码为 BCrypt 密文';
 COMMENT ON COLUMN platform_user.password_hash IS 'PasswordEncryptor 加密后的密码（默认 BCrypt）';
+COMMENT ON COLUMN platform_user.role        IS '角色：ADMIN 管理员（可读写）/ VIEWER 只读（仅 GET 查询，供 support team 使用）';
+COMMENT ON COLUMN platform_user.expires_at  IS '临时账号(self-TPAM)失效时间，NULL 为永久账号；到点由清理任务自动删除';
+COMMENT ON COLUMN platform_user.cr_in_no    IS '临时账号关联的 CR/IN 变更单号（审计追溯用）';
+COMMENT ON COLUMN platform_user.staff_id    IS '临时账号申请人的 staffid（账号名 = staffid_tpam）';
 COMMENT ON COLUMN platform_user.enabled     IS '1 启用 / 0 禁用';

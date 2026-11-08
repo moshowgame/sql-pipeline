@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <title>Temp Accounts - sql-pipeline</title>
+    <link rel="stylesheet" href="/lib/bootstrap-5.2.3/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<nav class="navbar navbar-expand navbar-dark bg-dark mb-4">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">⇄ sql-pipeline</a>
+        <ul class="navbar-nav me-auto">
+            <li class="nav-item"><a class="nav-link" href="/" data-i18n="nav.dashboard">Dashboard</a></li>
+            <li class="nav-item"><a class="nav-link" href="/connections.html" data-i18n="nav.connections">Connections</a></li>
+            <li class="nav-item"><a class="nav-link" href="/health-checks.html" data-i18n="nav.healthChecks">Health Checks</a></li>
+            <li class="nav-item"><a class="nav-link" href="/releases.html" data-i18n="nav.releases">Releases</a></li>
+            <li class="nav-item"><a class="nav-link" href="/notify.html" data-i18n="nav.notify">Alerts</a></li>
+            <li class="nav-item"><a class="nav-link active" href="/tpam.html" data-i18n="nav.tpam">Temp Accounts</a></li>
+        </ul>
+        <div class="d-flex align-items-center text-white-50">
+            <span id="navUser" class="me-2 small fw-bold text-white"></span>
+            <button id="logoutBtn" type="button" class="btn btn-outline-light btn-sm" data-i18n="nav.logout">Logout</button>
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <h5 class="mb-2" data-i18n="tpam.title">Self-TPAM Temporary Accounts</h5>
+    <p class="text-muted small mb-3" data-i18n="tpam.hint"></p>
+
+    <!-- 申请表单：CR/IN 单号 + staffid + 角色 -->
+    <div class="card page-card mb-4">
+        <div class="card-body">
+            <form class="row g-3 align-items-end" onsubmit="return false;">
+                <div class="col-md-3">
+                    <label class="form-label"><span data-i18n="tpam.crInNo">CR/IN No</span> <span class="text-danger">*</span></label>
+                    <input id="tCrInNo" class="form-control form-control-sm mono" maxlength="64" placeholder="CR123456 / IN789012">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label"><span data-i18n="tpam.staffId">Staff ID</span> <span class="text-danger">*</span></label>
+                    <input id="tStaffId" class="form-control form-control-sm mono" maxlength="64" placeholder="e.g. ZHANGS01">
+                    <div class="form-text" data-i18n="tpam.staffIdHint"></div>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label" data-i18n="tpam.role">Role</label>
+                    <select id="tRole" class="form-select form-select-sm">
+                        <option value="VIEWER" data-i18n="tpam.roleViewer">Read-only (VIEWER)</option>
+                        <option value="ADMIN" data-i18n="tpam.roleAdmin">Admin (ADMIN)</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-primary btn-sm" onclick="tpamGrant()" data-i18n="tpam.grant">Generate Account</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 现存临时账号列表 -->
+    <div class="card page-card">
+        <div class="card-body p-0">
+            <table class="table table-sm table-hover mb-0 align-middle">
+                <thead class="table-light">
+                <tr>
+                    <th data-i18n="tpam.col.username">Account</th>
+                    <th data-i18n="tpam.col.role">Role</th>
+                    <th data-i18n="tpam.col.crInNo">CR/IN No</th>
+                    <th data-i18n="tpam.col.staffId">Staff ID</th>
+                    <th data-i18n="tpam.col.expiresAt">Expires At</th>
+                    <th data-i18n="tpam.col.remaining">Remaining</th>
+                    <th style="min-width:90px" data-i18n="common.actions">Actions</th>
+                </tr>
+                </thead>
+                <tbody id="tpamTable"><tr><td colspan="7" class="text-center text-muted py-4" data-i18n="common.loading">Loading…</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 申请成功：账号 + 密码一次性展示 -->
+<div class="modal fade" id="tpamResultModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" data-i18n="tpam.result.title">Account Created (shown once)</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning py-2 small" data-i18n="tpam.result.warn"></div>
+                <table class="table table-sm mb-0">
+                    <tr><th data-i18n="tpam.col.username">Account</th><td class="mono fw-bold" id="rUsername"></td></tr>
+                    <tr><th data-i18n="tpam.result.password">Password</th>
+                        <td><span class="mono fw-bold" id="rPassword"></span>
+                            <button class="btn btn-outline-secondary btn-sm ms-2 py-0" onclick="copyTpamPassword()" data-i18n="tpam.result.copy">Copy</button>
+                        </td></tr>
+                    <tr><th data-i18n="tpam.col.role">Role</th><td id="rRole"></td></tr>
+                    <tr><th data-i18n="tpam.col.crInNo">CR/IN No</th><td class="mono" id="rCrInNo"></td></tr>
+                    <tr><th data-i18n="tpam.col.expiresAt">Expires At</th><td id="rExpiresAt"></td></tr>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary btn-sm" data-bs-dismiss="modal" data-i18n="common.close">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<footer class="app-footer">
+    <span data-i18n="footer.openBy">Open source by</span> <a href="https://zhengkai.blog.csdn.net/" target="_blank" rel="noopener"><strong data-i18n="footer.author">Moshow</strong></a>
+    <span class="sep">|</span><a href="https://github.com/moshowgame/sql-pipeline" target="_blank" rel="noopener" data-i18n="footer.github">GitHub</a>
+    <span class="sep">|</span><a href="https://zhengkai.blog.csdn.net/" target="_blank" rel="noopener" data-i18n="footer.csdn">CSDN Blog</a>
+    <span class="sep">|</span><span data-i18n="footer.license">MIT License</span>
+</footer>
+<script src="/lib/jquery/jquery-3.7.1.min.js"></script>
+<script src="/lib/bootstrap-5.2.3/js/bootstrap.bundle.min.js"></script>
+<script src="/js/common.js"></script>
+<script src="/js/i18n.js"></script>
+<script src="/js/tpam.js"></script>
+</body>
+</html>

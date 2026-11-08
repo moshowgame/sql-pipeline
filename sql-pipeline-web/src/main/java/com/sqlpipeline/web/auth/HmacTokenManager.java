@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 默认令牌实现：HMAC-SHA256 签名 + 内存缓存（有效期与 Token 一致，默认 1 天）。
- * <p>格式：base64url(username).过期毫秒.签名；认证以缓存为准——签名只防伪造，
+ * <p>格式：base64url(username).base64url(role).过期毫秒.签名；认证以缓存为准——签名只防伪造，
  * 缓存提供 1 天内的快速校验并支持登出即吊销（应用重启后所有令牌失效，需重新登录）。
  */
 @Slf4j
@@ -30,7 +30,7 @@ public class HmacTokenManager implements TokenManager {
     private final Map<String, CacheEntry> cache = new ConcurrentHashMap<>();
     private volatile long lastSweepAt = System.currentTimeMillis();
 
-    private record CacheEntry(String username, long expireAt) {
+    private record CacheEntry(String username, String role, long expireAt) {
         boolean expired() {
             return System.currentTimeMillis() >= expireAt;
         }
@@ -43,17 +43,18 @@ public class HmacTokenManager implements TokenManager {
     }
 
     @Override
-    public String issue(String username) {
+    public String issue(String username, String role) {
+        String safeRole = role == null || role.isBlank() ? "ADMIN" : role;
         long expireAt = System.currentTimeMillis() + ttlMillis;
-        String payload = encode(username) + "." + expireAt;
+        String payload = encode(username) + "." + encode(safeRole) + "." + expireAt;
         String token = payload + "." + sign(payload);
-        cache.put(token, new CacheEntry(username, expireAt));
+        cache.put(token, new CacheEntry(username, safeRole, expireAt));
         sweepIfDue();
         return token;
     }
 
     @Override
-    public Optional<String> verify(String token) {
+    public Optional<TokenPrincipal> verify(String token) {
         if (token == null || token.isBlank()) {
             return Optional.empty();
         }
@@ -65,7 +66,7 @@ public class HmacTokenManager implements TokenManager {
             cache.remove(token);
             return Optional.empty();
         }
-        return Optional.of(entry.username());
+        return Optional.of(new TokenPrincipal(entry.username(), entry.role()));
     }
 
     @Override

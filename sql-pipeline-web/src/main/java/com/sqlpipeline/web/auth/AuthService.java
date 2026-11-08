@@ -5,6 +5,7 @@ import com.sqlpipeline.common.error.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 /**
@@ -26,10 +27,14 @@ public class AuthService {
         if (user.getEnabled() != null && user.getEnabled() != 1) {
             throw BizException.i18n(ErrorCode.AU_USER_DISABLED, "error.auth.userDisabled");
         }
+        // self-TPAM 临时账号过期：直接拒绝登录（到点删除由 TpamUserCleanup 完成）
+        if (user.getExpiresAt() != null && user.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw BizException.i18n(ErrorCode.AU_TPAM_EXPIRED, "error.tpam.expired", user.getUsername());
+        }
         if (!passwordEncryptor.matches(rawPassword, user.getPasswordHash())) {
             throw BizException.i18n(ErrorCode.AU_LOGIN_FAILED, "error.auth.loginFailed");
         }
-        return new LoginResult(tokenManager.issue(username), user);
+        return new LoginResult(tokenManager.issue(username, user.getRole()), user);
     }
 
     /** 登出：吊销 Token。 */
@@ -39,7 +44,7 @@ public class AuthService {
 
     /** 由 Token 解析当前用户名（拦截器认证通过后再查用户信息用）。 */
     public Optional<UserAccount> currentUser(String token) {
-        return tokenManager.verify(token).flatMap(userStore::findByUsername);
+        return tokenManager.verify(token).flatMap(p -> userStore.findByUsername(p.username()));
     }
 
     /** 登录结果：Token + 用户信息。 */

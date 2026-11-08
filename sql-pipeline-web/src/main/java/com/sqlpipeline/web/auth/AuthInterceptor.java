@@ -14,13 +14,16 @@ import java.util.Optional;
 
 /**
  * 认证拦截器：每个 /api 请求都从 Cookie（或 Authorization: Bearer）取 Token 校验，
- * 通过后把用户名放入 request attribute（{@link #ATTR_USERNAME}），失败抛 401。
+ * 通过后把用户名与角色放入 request attribute（{@link #ATTR_USERNAME} / {@link #ATTR_ROLE}），失败抛 401。
+ * <p>只读角色（VIEWER）：非安全方法（GET/HEAD/OPTIONS）的写请求一律 403（登出除外）——
+ * support team 查询专用，防止误操作发布流程。
  */
 @Component
 @RequiredArgsConstructor
 public class AuthInterceptor implements HandlerInterceptor {
 
     public static final String ATTR_USERNAME = "auth.username";
+    public static final String ATTR_ROLE = "auth.role";
 
     private final AuthProperties authProperties;
     private final TokenManager tokenManager;
@@ -31,10 +34,24 @@ public class AuthInterceptor implements HandlerInterceptor {
             return true;
         }
         String token = resolveToken(request);
-        String username = tokenManager.verify(token)
+        TokenManager.TokenPrincipal principal = tokenManager.verify(token)
                 .orElseThrow(() -> BizException.i18n(ErrorCode.AU_UNAUTHORIZED, "error.auth.unauthorized"));
-        request.setAttribute(ATTR_USERNAME, username);
+        if (principal.isViewer()) {
+            enforceReadOnly(request);
+        }
+        request.setAttribute(ATTR_USERNAME, principal.username());
+        request.setAttribute(ATTR_ROLE, principal.role());
         return true;
+    }
+
+    /** VIEWER 只放行查询方法与登出，其余写操作 403（AU0004）。 */
+    private void enforceReadOnly(HttpServletRequest request) {
+        String method = request.getMethod();
+        boolean safe = "GET".equals(method) || "HEAD".equals(method) || "OPTIONS".equals(method);
+        boolean logout = "POST".equals(method) && request.getRequestURI().endsWith("/api/auth/logout");
+        if (!safe && !logout) {
+            throw BizException.i18n(ErrorCode.AU_READ_ONLY, "error.auth.readOnly");
+        }
     }
 
     /** Token 取值优先级：AUTH_TOKEN Cookie > Authorization: Bearer 头。 */

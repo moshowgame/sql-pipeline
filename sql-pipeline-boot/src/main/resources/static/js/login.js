@@ -28,6 +28,7 @@ $(function () {
                 return;
             }
             localStorage.setItem('operator', res.data.username);
+            localStorage.setItem('role', res.data.role || 'ADMIN');
             location.replace(nextPage());
         }).fail(function (xhr) {
             const r = xhr && xhr.responseJSON;
