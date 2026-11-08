@@ -361,7 +361,7 @@ ALTER TABLE platform_user ADD COLUMN IF NOT EXISTS cr_in_no  VARCHAR(64);
 ALTER TABLE platform_user ADD COLUMN IF NOT EXISTS staff_id  VARCHAR(64);
 
 COMMENT ON TABLE  platform_user             IS '平台用户（登录认证），密码为 BCrypt 密文';
-COMMENT ON COLUMN platform_user.password_hash IS 'PasswordEncryptor 加密后的密码（默认 BCrypt）';
+COMMENT ON COLUMN platform_user.password_hash IS 'PasswordEncryptor 加密后的密码（默认 BCrypt）；目录登录(LDAP)自动开通的账号为固定标记 {LDAP}，凭据由企业目录校验';
 COMMENT ON COLUMN platform_user.role        IS '角色：ADMIN 管理员（可读写）/ VIEWER 只读（仅 GET 查询，供 support team 使用）';
 COMMENT ON COLUMN platform_user.expires_at  IS '临时账号(self-TPAM)失效时间，NULL 为永久账号；到点由清理任务自动删除';
 COMMENT ON COLUMN platform_user.cr_in_no    IS '临时账号关联的 CR/IN 变更单号（审计追溯用）';

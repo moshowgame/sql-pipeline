@@ -41,6 +41,7 @@ public enum ErrorCode {
     AU_TPAM_EXISTS("AU0005", 409, "临时账号已存在，请等待其过期回收后重新申请"),
     AU_TPAM_INVALID("AU0006", 400, "临时账号申请参数非法"),
     AU_TPAM_EXPIRED("AU0007", 403, "临时账号已过期，请联系管理员重新申请"),
+    AU_LDAP_UNAVAILABLE("AU0008", 503, "企业目录认证服务暂不可用"),
 
     RL_SCAN_FAILED("RL0007", 500, "目录扫描失败"),
     RL_PLAN_BUSY("RL0008", 409, "计划正在被其他操作处理"),

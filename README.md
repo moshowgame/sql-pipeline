@@ -3,9 +3,9 @@
 [![GitHub](https://img.shields.io/badge/GitHub-moshowgame%2Fsql--pipeline-181717?logo=github)](https://github.com/moshowgame/sql-pipeline)
 [![CSDN](https://img.shields.io/badge/CSDN-zhengkai.blog.csdn.net-cf1322?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiI+PHRleHQgeD0iOCIgeT0iMTIiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkM8L3RleHQ+PC9zdmc+)](https://zhengkai.blog.csdn.net/)
 
-SQL 健康检查与发布编排平台：只读守卫（SqlGuard）、定时健康检查、Release Plan/Runbook（按目录顺序的发布编排 + Pipeline 可视化 + verify_sql 提交前验证卡点）、WAIT/CONTINUE 人工卡点、xMatters 告警通知；登录认证 + 只读角色（VIEWER）权限分级、Self-TPAM 自助临时账号（CR/IN 单号 + staffid 限时发号）。
+SQL 健康检查与发布编排平台：只读守卫（SqlGuard）、定时健康检查、SQL Console 即席查询、Release Plan/Runbook（按目录顺序的发布编排 + Pipeline 可视化 + verify_sql 提交前验证卡点 + ZIP/Nexus 发布包 + Dry-Run 预演 + HTML 执行报告）、WAIT/CONTINUE 人工卡点、xMatters 告警通知；登录认证（本地账号 + 可选 LDAP/AD 企业目录）+ 只读角色（VIEWER）权限分级、Self-TPAM 自助临时账号（CR/IN 单号 + staffid 限时发号）。
 
-> 按技术设计文档 `tech_design.md`（v1.1，与实现同步）实现。**平台元数据库与目标业务库均以 PostgreSQL 为主**（一期不考虑 Oracle / MySQL）。
+> 按技术设计文档 `tech_design.md`（v1.1 基线）实现；其后的功能增强（SQL Console、ZIP/Nexus、Dry-Run、HTML 报告、LDAP 登录等）以下方更新日志与本 README 各章节为准。**平台元数据库与目标业务库均以 PostgreSQL 为主**（一期不考虑 Oracle / MySQL）。
 
 ## 👤 AUTHOR
 
@@ -34,10 +34,10 @@ SQL 健康检查与发布编排平台：只读守卫（SqlGuard）、定时健�
 | 模块 | 能力 |
 |---|---|
 | 数据源管理 | 平台内定义 PostgreSQL 连接（可指定默认 Schema，支持 share folder 目标库），HikariCP 连接池运行期动态注册 / 热更新 / 连通性测试；密码 AES-256-GCM 加密存储，接口仅返回掩码；连接池容量预算校验（同一目标库 pool_size 总和 ≤ 预算，超限 DS0004 409）、大结果集流式读取（fetchSize 游标分批拉取）、连接测试 pg_roles 只读账号探测提示 |
-| 健康检查 | 只读 SQL（JSqlParser AST 级 SELECT-only 校验，保存与执行双重拦截 + `setReadOnly` 兜底）、`${name}` 命名参数占位符、简化断言（VALUE/ROWS + 操作符 + 期望值）、Spring Cron 动态调度、修改记录（版本快照）与执行记录 |
-| Release Plan/Runbook | Release Type（FOLDER / ZIP 占位）+ Release Path（可指定 share folder）、SCAN 自动生成可重编号的步骤、Pipeline 可视化（横向/纵向）、DRAFT 可编辑 / 运行后只读、CR Number + Remark 启动、异步驱动、WAIT/CONTINUE 人工卡点、**verify_sql 提交前验证卡点**、单步重试（含备注审计）、全流程重跑（UAT 计时摘要）、SSE 进度推送、**大批量失败聚合展示**（按错误指纹折叠 + 分页） |
+| 健康检查 | 只读 SQL（JSqlParser AST 级 SELECT-only 校验，保存与执行双重拦截 + `setReadOnly` 兜底）、`${name}` 命名参数占位符、简化断言（VALUE/ROWS + 操作符 + 期望值）、Spring Cron 动态调度、修改记录（版本快照）与执行记录；同一定义防重入（执行中拒绝并发触发，CRON 静默跳过）、调度与执行双线程池（慢查询不挤占调度）、启动恢复中断记录 |
+| Release Plan/Runbook | Release Type（FOLDER 目录 / **ZIP 发布包**——本地上传或 **Nexus 远程下载**，zip-slip 路径逃逸防护）+ Release Path（可指定 share folder）、SCAN 自动生成可重编号的步骤、Pipeline 可视化（横向/纵向）、DRAFT 可编辑 / 运行后只读、CR Number + Remark 启动、**Dry-Run 预演模式**（仅执行 verify_sql 验证、不落库、不触发告警）、**自包含 HTML 执行报告导出**、异步驱动、WAIT/CONTINUE 人工卡点、**verify_sql 提交前验证卡点**、单步重试（含备注审计）、全流程重跑（UAT 计时摘要）、SSE 进度推送、**大批量失败聚合展示**（按错误指纹折叠 + 分页）、SQL 明细日志攒批写入（单次 JDBC 往返批量落库） |
 | 告警通知 | xMatters API 通道（NONE/BASIC/API_KEY 认证）、订阅 HC_FAIL / RELEASE_STEP_FAIL / PLAN_FAIL / RELEASE_STEP_SUCCESS / PLAN_COMPLETED、健康检查连败阈值、推送日志（notify_log） |
-| 账号与权限 | 登录认证（HMAC Token，登出即吊销）、角色 ADMIN / VIEWER（只读角色写操作前后端双重拦截）、**Self-TPAM 自助临时账号**（CR/IN 单号 + staffid → `staffid_tpam`，32 位随机密码仅展示一次，默认 4 小时过期自动回收） |
+| 账号与权限 | 登录认证（HMAC Token，登出即吊销）、**可选 LDAP/AD 企业目录认证**（独立扩展模块，首次登录自动开通、组映射角色）、角色 ADMIN / VIEWER（只读角色写操作前后端双重拦截）、**Self-TPAM 自助临时账号**（CR/IN 单号 + staffid → `staffid_tpam`，32 位随机密码仅展示一次，默认 4 小时过期自动回收） |
 | 国际化 | 界面与错误消息 English（默认）/ 简体中文，导航栏一键切换 |
 
 ## SCREENCAP
@@ -50,7 +50,17 @@ SQL 健康检查与发布编排平台：只读守卫（SqlGuard）、定时健�
 
 ## 更新日志
 
-当前版本：**v1.1**（与 `tech_design.md` v1.1 同步）。
+当前版本：**v1.2**。
+
+### 2026-11 —— 发布工作流增强、SQL Console 与企业目录认证 🚀
+
+- **2026-11-08**：新增 **LDAP/AD 企业目录登录**（独立扩展模块 `sql-pipeline-ldap`）：JDK 原生 JNDI 零额外依赖，支持 search-then-bind（服务账号定位用户）与 direct bind（DN 模板）双模式、LDAPS / StartTLS、连接/读超时、RFC 4515/4514 防注入转义；目录账号首次登录**自动开通**（默认 VIEWER，`admin-groups` 组 DN 命中即 ADMIN），`password_hash` 写 `{LDAP}` 标记便于 DBA 识别；目录凭据错误/服务不可用默认**降级回退本地账号**（`fail-closed: true` 改为拒绝），本地 default-users 始终可用作兜底；`ldap.enabled: false`（默认）时行为与历史完全一致
+- **2026-11-08**：**ZIP 发布包 + Nexus 远程下载**：Release Type ZIP 支持——解压带 zip-slip 路径逃逸防护（拒绝绝对路径与 `..` 穿越）；可输入 Nexus 地址 + 用户名 + Token 自动下载发布包（Basic Auth 且不跟随 302 重定向防凭据泄露，200MB 上限），下载缓存复用 + 自动目录检测
+- **2026-11-08**：**Dry-Run 发布预演**：start 时 `dryRun=true`，仅执行各步骤 verify_sql 验证、语句记为 PLANNED 不实际执行、不触发告警，执行完自动回滚——变更前先验证 Runbook 配置与 verify_sql 是否有效
+- **2026-11-08**：**SQL Console 独立页面**（`/console.html`）：连接选择、元数据浏览、选区执行、查询历史、明暗主题切换，复用现有元数据接口与 SqlGuard SELECT-only 校验
+- **2026-11-08**：**自包含 HTML 执行报告**：`GET /api/releases/{id}/report` 导出单文件报告（计划汇总、步骤状态、SQL 明细归档），离线可存档归档
+- **2026-11-08**：**健康检查执行链路加固**：同一定义防重入（执行中拒绝并发触发，手动返回 409 HC0004、定时静默跳过）；调度触发与查询执行拆分双线程池（`hc-sched-` / `hc-exec-`，慢查询不挤占调度）；启动时残留 RUNNING 记录自动置 ERROR（与发布模块恢复语义一致）
+- **2026-11-08**：**SQL 明细日志攒批写入**：`release_sql_log` 从逐条 INSERT 改为缓冲攒批（阈值 200 条）单次 JDBC 往返落库，步骤 SUCCESS 前与 FAIL 时强制冲刷保留排障现场——大计划执行元库往返从千次级降到个位数
 
 ### 2026-11 —— P0 优化、权限分级与 Self-TPAM 📈
 
@@ -71,8 +81,9 @@ sql-pipeline-parent
 ├── sql-pipeline-datasource    # DataSourceRegistry、SqlGuard、SqlSplitter、DynamicSqlExecutor、SqlParams、CryptoService
 ├── sql-pipeline-notify        # 告警通知：AlertService、XmattersSender、通知通道与推送日志
 ├── sql-pipeline-health        # 健康检查：AssertEvaluator、HealthCheckScheduler、HealthCheckService
-├── sql-pipeline-release       # 发布：ReleaseScanner、ReleaseOrchestrator（状态机+advisory lock）、ReleaseEventPublisher
-├── sql-pipeline-web           # Controller、DTO、全局异常（locale 渲染）、LocaleConfig、TraceId
+├── sql-pipeline-release       # 发布：ReleaseScanner（含 ZIP 解压/Nexus 下载）、ReleaseOrchestrator（状态机+advisory lock+Dry-Run+报告）、ReleaseEventPublisher
+├── sql-pipeline-ldap          # 可选扩展模块：LDAP/AD 企业目录登录（JNDI 实现 DirectoryAuthenticator SPI）
+├── sql-pipeline-web           # Controller、DTO、认证（AuthService/UserStore/DirectoryAuthenticator SPI）、全局异常（locale 渲染）、LocaleConfig、TraceId
 └── sql-pipeline-boot          # 启动类、application.yml、messages*.properties、PostgreSQL 初始化脚本
 ```
 
@@ -117,11 +128,12 @@ java -jar sql-pipeline-boot/target/sql-pipeline-boot-1.0.0-SNAPSHOT.jar
 
 | 页面 | 功能 |
 |---|---|
-| `/login.html` | 登录页（HMAC Token 认证；`default-users` 内置账号，详见"账号与权限"） |
+| `/login.html` | 登录页（HMAC Token 认证；本地 `default-users` 内置账号，开启 LDAP 后目录账号同样从此登录，详见"账号与权限"） |
 | `/`（总览） | 连接 / 健康检查 / 发布计划数量卡片、最近发布计划、平台健康状态 |
 | `/connections.html` | 连接 CRUD（密码留空=不变、connKey 不可改、可配置默认 Schema）、连通性测试（含 pg_roles 只读账号探测提示）、连接池重载、启停（热更新）；同一目标库连接池容量预算硬校验 |
 | `/health-checks.html` | 定义 CRUD（`${name}` 命名参数、简化断言三要素）、手动执行（参数覆盖）、执行记录分页、修改历史（版本快照）、启停调度 |
-| `/releases.html` | Release Plan/Runbook：计划列表（View / Edit 按钮，Edit 仅 DRAFT）、创建（类型/路径/默认连接 + SCAN 生成可重编号步骤 + **verify_sql 列配置**）、**Pipeline 可视化（横向/纵向切换、分段进度条、人工卡点标记、失败节点 ✗ 失败/总数比例、节点点击查看运行结果）**、步骤详情"仅失败/全部"双 Tab（失败按错误指纹聚合折叠 + 分页）、启动（CR+备注）、WAIT 人工继续（记录确认人）、失败单步重试（含备注）、全流程重跑、SQL 明细日志（按步骤/轮次/状态过滤 + 分页）、UAT 运行摘要、SSE 实时刷新 |
+| `/releases.html` | Release Plan/Runbook：计划列表（View / Edit 按钮，Edit 仅 DRAFT）、创建（类型/路径/默认连接 + SCAN 生成可重编号步骤 + **verify_sql 列配置**；ZIP 类型支持 Nexus 地址+用户名+Token 远程下载）、**Dry-Run 预演启动**（仅验证不落库）、**Pipeline 可视化（横向/纵向切换、分段进度条、人工卡点标记、失败节点 ✗ 失败/总数比例、节点点击查看运行结果）**、步骤详情"仅失败/全部"双 Tab（失败按错误指纹聚合折叠 + 分页）、启动（CR+备注）、WAIT 人工继续（记录确认人）、失败单步重试（含备注）、全流程重跑、SQL 明细日志（按步骤/轮次/状态过滤 + 分页）、UAT 运行摘要、SSE 实时刷新、**HTML 执行报告导出** |
+| `/console.html` | SQL Console：连接选择、元数据浏览、选区执行、查询历史、明暗主题切换；只读查询（SqlGuard SELECT-only 校验） |
 | `/notify.html` | 告警通道 CRUD（xMatters URL、认证方式、订阅事件、连败阈值）、通道连通性测试、推送日志 |
 | `/tpam.html` | Self-TPAM 自助临时账号：CR/IN 单号 + staffid + 角色一键发号、密码一次性展示（复制）、现存临时账号列表（剩余时间/过期状态）、提前吊销 |
 
@@ -143,6 +155,16 @@ java -jar sql-pipeline-boot/target/sql-pipeline-boot-1.0.0-SNAPSHOT.jar
 - 账号存 `platform_user` 表（BCrypt 密文），登录签发 **HMAC Token**（`base64url(username).base64url(role).过期毫秒.签名` + 内存缓存）：登出即吊销、应用重启全部失效、签名仅防伪造；角色随 Token 携带，免每请求查库
 - API 认证支持 Cookie（登录页自动携带）或 `Authorization: Bearer <token>`；`X-Operator` 头继续作为操作者身份（发布步骤指定执行者时的校验依据）
 - `sql-pipeline.auth.default-users` 内置账号（key=用户名，value=密码，启动时不存在则自动创建，入库前 BCrypt 加密），默认 `admin/admin123`、`dev/dev123`——**首次部署请立即修改**
+
+### 企业目录认证（LDAP / AD，可选扩展模块）
+
+`sql-pipeline-ldap` 独立模块实现 `DirectoryAuthenticator` SPI，`sql-pipeline.auth.ldap.enabled: true` 即启用，员工用企业目录账号直接登录（表单仍是 username/password，前端无感知）：
+
+- **双认证模式**：配置 `manager-dn`/`manager-password`（只读服务账号）走 **search-then-bind**——先按 `user-search-filter`（AD 默认 `(sAMAccountName={0})`）定位用户 DN 并取 displayName / memberOf，再以用户 DN bind 验密码；不配服务账号则按 `user-dn-pattern`（如 `cn={0},ou=users,dc=corp,dc=com`）**direct bind**
+- **首次登录自动开通**：本地无该账号时自动建档，角色默认 `VIEWER`；`admin-groups`（组 DN 列表）命中任一 `memberOf` 即开通为 ADMIN；`password_hash` 写固定标记 **`{LDAP}`**（BCrypt 恒不匹配，DBA 一眼识别目录托管账号）；本地已有同名账号则沿用本地角色/禁用状态
+- **降级与兜底**：目录凭据错误、无此用户、服务不可用（默认 `fail-closed: false`）都回退本地 BCrypt 校验——本地 `admin` 始终可登录；`fail-closed: true` 时目录不可用直接返回 503（AU0008）
+- **安全设计**：RFC 4515/4514 filter/DN 防注入转义、连接/读超时（3s/5s 默认）、每次登录独立建连用后即关、LDAPS（需 CA 证书入 JVM truststore）或 StartTLS 加密、凭据不入日志
+- 完整配置见 `application.yml` 的 `sql-pipeline.auth.ldap` 注释段；后续 OAuth2 / 内部账号中心实现同一 SPI 接口即可接入
 
 ### 只读角色（VIEWER）
 
@@ -187,7 +209,14 @@ VALUES ('support01', '<bcrypt-hash>', 'Support Team', 'VIEWER', 1);
 | `sql-pipeline.auth.default-users.*` | admin / dev | 启动时自动创建的内置账号（key=用户名，value=密码，BCrypt 入库） |
 | `sql-pipeline.auth.tpam.enabled` | `true` | Self-TPAM 自助临时账号开关 |
 | `sql-pipeline.auth.tpam.ttl-hours` | `4` | Self-TPAM 临时账号有效期（小时），到点定时回收删除 |
+| `sql-pipeline.auth.ldap.enabled` | `false` | LDAP/AD 企业目录登录开关（扩展模块 `sql-pipeline-ldap`，详见"账号与权限"） |
+| `sql-pipeline.auth.ldap.url` / `base-dn` | 无 | 目录地址（ldap:// 或 ldaps://）与搜索基础 DN |
+| `sql-pipeline.auth.ldap.manager-dn` / `manager-password` | 无 | 只读服务账号（search-then-bind）；未配置时走 `user-dn-pattern` direct bind |
+| `sql-pipeline.auth.ldap.admin-groups` | 空 | AD 组 DN 列表：首次开通命中即 ADMIN |
+| `sql-pipeline.auth.ldap.default-role` | `VIEWER` | 目录账号首次开通的默认角色 |
+| `sql-pipeline.auth.ldap.fail-closed` | `false` | 目录不可用时拒绝登录（503）；默认降级回退本地认证 |
 | `sql-pipeline.health.scheduler.pool-size` | `8` | 健康检查调度线程池（Boot 默认 1，必须显式设置） |
+| `sql-pipeline.health.executor.pool-size` | `8` | 健康检查执行线程池（`hc-exec-`，慢查询不挤占调度线程） |
 | `sql-pipeline.health.default-timeout-sec` | `30` | 健康检查 SQL 默认超时 |
 | `sql-pipeline.health.default-max-rows` | `1000` | 默认最大返回行数（取连接配置 max_rows 优先） |
 | `sql-pipeline.notify.enabled` | `true` | 告警总开关（通道自身 enabled 独立生效） |
@@ -196,7 +225,7 @@ VALUES ('support01', '<bcrypt-hash>', 'Support Team', 'VIEWER', 1);
 
 ## Release Plan / Runbook
 
-**创建计划**（弹窗）：plan_name 默认自动填 `release_yyyyMMdd`（当天）；Release Type 选 `FOLDER`（目录，推荐）或 `ZIP`（解压暂未实现，仅占位）；**Release Path 必填**，通常是运行本应用主机可访问的 share folder 绝对路径（如 `/mnt/share/release_20261004`），相对路径则基于全局 base-path 解析。
+**创建计划**（弹窗）：plan_name 默认自动填 `release_yyyyMMdd`（当天）；Release Type 选 `FOLDER`（目录，推荐）或 `ZIP`（发布包：提供本机可访问的 zip 文件路径，或勾选 **Nexus 远程下载**——输入 Nexus 地址 + 用户名 + Token 自动拉取，Basic Auth 且不跟随 302 重定向防凭据泄露，200MB 大小上限，zip-slip 路径逃逸防护）；**Release Path 必填**，通常是运行本应用主机可访问的 share folder 绝对路径（如 `/mnt/share/release_20261004`），相对路径则基于全局 base-path 解析。
 
 **SCAN**：点击后自动读取 Release Path 下的数字子目录（asc），每个子目录生成一个可编辑的步骤行——步骤号默认等于目录名数字，**可直接修改以调整执行顺序**；摘要表仅统计各目录的 SQL 文件数（大目录友好）。
 
@@ -219,6 +248,7 @@ VALUES ('support01', '<bcrypt-hash>', 'Support Team', 'VIEWER', 1);
 
 ### 执行模型与高级特性
 
+- **Dry-Run 发布预演**：start 请求带 `dryRun: true` 即进入预演——各步骤仅执行 verify_sql 验证（记入日志），变更 SQL 全部记为 `PLANNED` 状态**不实际执行**、不触发告警，执行完自动回滚；用于变更前预检 Runbook 配置、目录结构与 verify_sql 是否有效，预演通过后再正式 start。
 - **异步驱动**：start/continue/retry/rerun 的 HTTP 请求仅完成校验与元数据写入后立即返回，实际执行在 `release-driver` 线程池进行，进度经 SSE 推送（`sql-pipeline.release.driver-pool-size` / `driver-queue-capacity`）。
 - **plan 级互斥（PG advisory lock）**：同一计划的驱动操作串行化，应用崩溃锁自动释放，天然支持多实例部署（持锁期间占用一个平台库连接）。
 - **步骤事务**：一个目录 = 一个事务，失败整目录回滚。若目录内放置**空的 `_nontransactional` 标记文件**，该步骤逐条自动提交、失败不回滚——用于 `CREATE INDEX CONCURRENTLY` 等 PostgreSQL 非事务 DDL（事务模式下出现 CONCURRENTLY 会直接拒绝并提示）。
@@ -335,6 +365,16 @@ curl -s -X PUT localhost:8080/api/releases/1 -H 'Content-Type: application/json'
 curl -s -X POST localhost:8080/api/releases/1/start -H 'Content-Type: application/json' -H 'X-Operator: zhangsan' \
   -d '{"crNumber":"CR-20261004-001","remark":"10月迭代 UAT 发布"}'
 
+# 3b) Dry-Run 预演：仅执行 verify_sql 验证、变更 SQL 记 PLANNED 不落库、不触发告警、执行完自动回滚
+curl -s -X POST localhost:8080/api/releases/1/start -H 'Content-Type: application/json' -H 'X-Operator: zhangsan' \
+  -d '{"crNumber":"CR-20261004-001","remark":"预演","dryRun":true}'
+
+# 3c) ZIP 发布包 + Nexus 远程下载（预扫描：输入 Nexus 凭据自动下载并检测目录结构）
+curl -s -X POST localhost:8080/api/releases/fetch-zip -H 'Content-Type: application/json' -H 'X-Operator: admin' -d '{
+  "nexusUrl": "https://nexus.corp.com/repository/releases/release_20261004.zip",
+  "username": "deployer", "token": "<nexus-token>"
+}'
+
 # 4) WAIT 步骤人工确认后推进（记录确认人 confirm_by）
 curl -s -X POST localhost:8080/api/releases/1/continue -H 'X-Operator: zhangsan'
 
@@ -347,6 +387,7 @@ curl -s -X POST localhost:8080/api/releases/1/rerun -H 'X-Operator: admin'      
 curl -s localhost:8080/api/releases/1                 # 计划详情（含步骤状态/耗时/确认人/脚本变更标记）
 curl -s 'localhost:8080/api/releases/1/logs?stepNo=2&runSeq=1' # SQL 明细日志（按步骤/轮次过滤）
 curl -s localhost:8080/api/releases/1/summaries       # 每次运行摘要（UAT 统计）
+curl -s localhost:8080/api/releases/1/report -o report.html  # 自包含 HTML 执行报告（计划汇总/步骤状态/SQL 明细归档）
 curl -N localhost:8080/api/releases/1/stream          # SSE 实时进度（step / plan 事件）
 ```
 
@@ -424,12 +465,16 @@ L1/L2 的 AST 校验基于 JSqlParser，解析失败同样拒绝（fail-closed�
 | 13 | `release_step` 增加 `verify_sql` 列；事务模式 COMMIT 前在同一事务内执行只读验证（≥1 行放行、0 行回滚），结果记 `release_sql_log`（file_name=`(verify_sql)`） | P0 优化：防止"语句跑完但没生效"的静默失败 |
 | 14 | 新增连接池容量预算：同一规范化 jdbc_url 的 `pool_size` 总和 ≤ `sql-pipeline.datasource.pool-budget-per-url`（默认 20），写路径硬校验 DS0004 409 + 启动软告警；默认 pool_size 10→8 | P0 优化：防止多连接叠加打爆目标库 |
 | 15 | 新增登录认证（`platform_user` + HMAC Token）与角色 ADMIN/VIEWER（VIEWER 写操作 403）；新增 Self-TPAM 临时账号（`expires_at/cr_in_no/staff_id` 列、5 分钟过期回收任务） | 需求方新增：support team 只读查询模式与变更场景限时发号 |
+| 16 | ZIP 发布包已实现：解压带 zip-slip 防护，支持本机路径或 Nexus 远程下载（Basic Auth 不跟随 302、200MB 上限）；新增 Dry-Run 预演（仅验证不落库不告警）与自包含 HTML 执行报告导出 | 文档 §7.1 仅规划 ZIP 类型；需求方后续新增下载/预演/报告 |
+| 17 | SQL 明细日志从逐条 INSERT 改为攒批写入（阈值 200 条单次 JDBC 往返，步骤终态/失败强制冲刷） | 大计划执行性能：元库往返从千次级降到个位数 |
+| 18 | 新增企业目录认证 `DirectoryAuthenticator` SPI + 独立扩展模块 `sql-pipeline-ldap`（JDK 原生 JNDI，LDAP/AD 自动开通、adminGroups 组映射、fail-open 降级回退本地） | 需求方新增：员工用企业目录账号登录，模块化隔离扩展能力 |
+| 19 | 健康检查增加同 defId 防重入（手动 409/定时跳过）、调度/执行双线程池、启动恢复残留 RUNNING 记录；新增 SQL Console 独立页面 | 执行链路加固与即席查询体验 |
 
 ## 已知约束
 
 - ~~单实例部署~~：plan 级锁已改为 PG advisory lock，支持多实例（需共享发布目录）；多实例下健康检查连败计数为实例内各自统计
 - 目标库驱动仅内置 PostgreSQL；`release` 目录内的 SQL 应使用 PostgreSQL 方言（SqlSplitter 已支持 dollar-quote 函数体）
-- ZIP 类型已占位但解压功能暂未实现（start/scan 会明确提示），当前请使用 FOLDER 类型
+- ZIP 解压含 zip-slip 路径逃逸防护（拒绝绝对路径与 `..` 穿越）；Nexus 下载 Basic Auth 不跟随 302 重定向防凭据泄露、200MB 上限；Dry-Run 仅执行 verify_sql 验证、不落库不触发告警
 - 应用崩溃恢复会把 RUNNING 步骤置 FAIL 并提示人工核对——崩溃可能发生在目标库 commit 之后，重试前请核对是否已提交
 - 一期不做：SQL 编辑器、多级审批、分布式事务、执行计划可视化、多租户
 
@@ -437,5 +482,5 @@ L1/L2 的 AST 校验基于 JSqlParser，解析失败同样拒绝（fail-closed�
 
 ```bash
 ./mvnw package          # 构建
-./mvnw test             # 单元测试（SqlSplitter / SqlGuard / Crypto / 断言 / 目录扫描）
+./mvnw test             # 单元测试（SqlSplitter / SqlGuard / Crypto / 断言 / 目录扫描 / LDAP 认证——unboundid 内嵌内存 LDAP，无需真实 AD）
 ```

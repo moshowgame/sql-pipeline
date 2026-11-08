@@ -25,6 +25,7 @@
         <module>sql-pipeline-health</module>
         <module>sql-pipeline-release</module>
         <module>sql-pipeline-web</module>
+        <module>sql-pipeline-ldap</module>
         <module>sql-pipeline-boot</module>
     </modules>
 
@@ -67,6 +68,11 @@
             <dependency>
                 <groupId>com.sqlpipeline</groupId>
                 <artifactId>sql-pipeline-web</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.sqlpipeline</groupId>
+                <artifactId>sql-pipeline-ldap</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

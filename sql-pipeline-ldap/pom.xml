@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.sqlpipeline</groupId>
+        <artifactId>sql-pipeline-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>sql-pipeline-ldap</artifactId>
+    <name>sql-pipeline-ldap</name>
+    <description>可选扩展模块：LDAP / AD 企业目录登录认证（实现 DirectoryAuthenticator SPI，JDK 原生 JNDI 零额外依赖）</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.sqlpipeline</groupId>
+            <artifactId>sql-pipeline-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <!-- 测试：内嵌内存 LDAP 服务器模拟 AD -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.unboundid</groupId>
+            <artifactId>unboundid-ldapsdk</artifactId>
+            <version>6.0.11</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

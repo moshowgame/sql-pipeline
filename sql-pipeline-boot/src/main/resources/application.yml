@@ -80,6 +80,22 @@ sql-pipeline:
       enabled: true
       # 临时账号有效期（小时），默认 4 小时，到点自动回收删除
       ttl-hours: 4
+    # LDAP/AD 企业目录登录（扩展模块 sql-pipeline-ldap）：默认关闭，开启后目录账号首次登录自动开通（默认 VIEWER）
+    # 开启时本地 default-users 仍可用作兜底；目录服务不可用默认降级回退本地校验（fail-closed: true 改为拒绝登录）
+    ldap:
+      enabled: false
+      # url: ldap://ad.corp.com:389          # 或 ldaps://ad.corp.com:636（需 CA 证书入 JVM truststore）
+      # base-dn: DC=corp,DC=com
+      # user-search-filter: (sAMAccountName={0})
+      # manager-dn: CN=svc-sqlpipe,OU=Service,DC=corp,DC=com   # 只读服务账号（search-then-bind）
+      # manager-password: ${LDAP_MANAGER_PASSWORD:}
+      # admin-groups:                          # 命中任一组首次开通为 ADMIN，否则 default-role
+      #   - CN=DBA-Admins,OU=Groups,DC=corp,DC=com
+      # default-role: VIEWER
+      # connect-timeout-ms: 3000
+      # read-timeout-ms: 5000
+      # start-tls: false
+      # fail-closed: false
 
 logging:
   level:
