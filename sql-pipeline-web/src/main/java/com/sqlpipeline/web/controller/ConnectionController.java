@@ -72,6 +72,7 @@ public class ConnectionController {
         entity.setMaxRows(req.maxRows());
         entity.setQueryTimeoutS(req.queryTimeoutS());
         entity.setEnabled(req.enabled());
+        entity.setEnv(req.env());
         Long id = connectionService.create(entity, req.password(), Operator.of(operator));
         metadataService.evict(entity.getConnKey());
         return R.ok(id);
@@ -91,6 +92,7 @@ public class ConnectionController {
         patch.setMaxRows(req.maxRows());
         patch.setQueryTimeoutS(req.queryTimeoutS());
         patch.setEnabled(req.enabled());
+        patch.setEnv(req.env());
         connectionService.update(id, patch, req.password(), Operator.of(operator));
         metadataService.evict(connectionService.get(id).getConnKey());
         return R.ok();

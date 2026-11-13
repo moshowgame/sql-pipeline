@@ -12,5 +12,7 @@ public record ConnectionUpdateReq(
         Integer connTimeoutMs,
         Integer maxRows,
         Integer queryTimeoutS,
-        Integer enabled) {
+        Integer enabled,
+        /** 环境标识：DEV|PROD，留空保持不变 */
+        String env) {
 }

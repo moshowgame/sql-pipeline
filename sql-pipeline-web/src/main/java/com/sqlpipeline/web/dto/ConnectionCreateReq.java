@@ -16,5 +16,7 @@ public record ConnectionCreateReq(
         Integer connTimeoutMs,
         Integer maxRows,
         Integer queryTimeoutS,
-        Integer enabled) {
+        Integer enabled,
+        /** 环境标识：DEV|PROD，缺省 DEV */
+        String env) {
 }

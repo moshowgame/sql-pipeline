@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS db_connection (
     max_rows        INT          NOT NULL DEFAULT 1000,
     query_timeout_s INT          NOT NULL DEFAULT 30,
     enabled         SMALLINT     NOT NULL DEFAULT 1,
+    env             VARCHAR(8)   NOT NULL DEFAULT 'DEV',
     created_by      VARCHAR(64),
     created_at      TIMESTAMP    NOT NULL DEFAULT now(),
     updated_by      VARCHAR(64),
@@ -33,6 +34,7 @@ CREATE TABLE IF NOT EXISTS db_connection (
 CREATE INDEX IF NOT EXISTS idx_conn_enabled ON db_connection (enabled);
 -- 兼容存量库：补列
 ALTER TABLE db_connection ADD COLUMN IF NOT EXISTS default_schema VARCHAR(64);
+ALTER TABLE db_connection ADD COLUMN IF NOT EXISTS env VARCHAR(8) NOT NULL DEFAULT 'DEV';
 
 COMMENT ON TABLE  db_connection                IS '数据库连接定义（目标库，仅 PostgreSQL）';
 COMMENT ON COLUMN db_connection.conn_key       IS '平台内引用名（健康检查/发布计划通过它引用连接）';
@@ -41,6 +43,7 @@ COMMENT ON COLUMN db_connection.default_schema IS '连接默认 Schema（空=驱
 COMMENT ON COLUMN db_connection.pool_size      IS '连接池最大容量；同一目标库所有启用连接的 pool_size 之和不得超过 sql-pipeline.datasource.pool-budget-per-url（DS0004），多实例请用 PgBouncer';
 COMMENT ON COLUMN db_connection.max_rows       IS '健康检查查询最大行数';
 COMMENT ON COLUMN db_connection.enabled        IS '1 启用 / 0 禁用（软删，禁用时连接池同步移除）';
+COMMENT ON COLUMN db_connection.env            IS '环境标识：DEV|PROD（默认 DEV），PROD 连接与计划在前端红色警示并二次确认';
 
 -- =====================================================================
 -- 2. 健康检查

@@ -18,6 +18,8 @@ public class ReleasePlan {
     private String releasePath;
     /** 未单独配置的步骤默认使用该连接。 */
     private String defaultConnKey;
+    /** 环境标识（瞬时不落库，运行时按 default_conn_key 动态读取连接 env，先例：ReleaseStep.scriptChanged）：DEV|PROD。 */
+    private String planEnv;
     /** 各步骤编排配置 JSON：[{stepNo, connKey, afterMode, executor}]。 */
     private String stepConfig;
     private String status;

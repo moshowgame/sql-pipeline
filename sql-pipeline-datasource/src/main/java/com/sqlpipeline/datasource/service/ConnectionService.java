@@ -4,6 +4,7 @@ import com.sqlpipeline.common.error.ErrorCode;
 import com.sqlpipeline.common.exception.BizException;
 import com.sqlpipeline.datasource.config.DatasourceProperties;
 import com.sqlpipeline.datasource.crypto.CryptoService;
+import com.sqlpipeline.datasource.enums.ConnEnv;
 import com.sqlpipeline.datasource.entity.DbConnection;
 import com.sqlpipeline.datasource.mapper.DbConnectionMapper;
 import com.sqlpipeline.datasource.registry.DataSourceRegistry;
@@ -19,7 +20,10 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.springframework.util.StringUtils.hasText;
 
@@ -53,6 +57,7 @@ public class ConnectionService {
         if (entity.getEnabled() == null) {
             entity.setEnabled(1);
         }
+        entity.setEnv(ConnEnv.normalize(entity.getEnv()));
         if (!hasText(entity.getDriverClass())) {
             entity.setDriverClass("org.postgresql.Driver");
         }
@@ -87,6 +92,10 @@ public class ConnectionService {
         if (patch.getMaxRows() != null) old.setMaxRows(patch.getMaxRows());
         if (patch.getQueryTimeoutS() != null) old.setQueryTimeoutS(patch.getQueryTimeoutS());
         if (patch.getEnabled() != null) old.setEnabled(patch.getEnabled());
+        if (hasText(patch.getEnv())) {
+            // 空串/缺省保留旧值，显式传值时归一化校验（非法值 DS0006）
+            old.setEnv(ConnEnv.normalize(patch.getEnv()));
+        }
         if (patch.getDefaultSchema() != null) {
             // 传空串表示清空 schema（回到驱动默认 search_path）
             String schema = patch.getDefaultSchema().trim();
@@ -184,6 +193,22 @@ public class ConnectionService {
 
     public List<DbConnection> list() {
         return mapper.selectAll();
+    }
+
+    /** 批量取 conn_key → env（发布计划运行时动态读取环境标识用）；key 空白跳过，缺失/空值兜底 DEV。 */
+    public Map<String, String> envByKeys(Collection<String> connKeys) {
+        Map<String, String> result = new HashMap<>();
+        if (connKeys == null || connKeys.isEmpty()) {
+            return result;
+        }
+        List<String> keys = connKeys.stream().filter(k -> hasText(k)).distinct().toList();
+        if (keys.isEmpty()) {
+            return result;
+        }
+        for (DbConnection e : mapper.selectEnvByKeys(keys)) {
+            result.put(e.getConnKey(), hasText(e.getEnv()) ? e.getEnv() : ConnEnv.DEV);
+        }
+        return result;
     }
 
     private DbConnection requireExists(Long id) {

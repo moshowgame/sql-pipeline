@@ -16,6 +16,7 @@ public enum ErrorCode {
     DS_DISABLED("DS0003", 400, "数据源已禁用"),
     DS_POOL_BUDGET("DS0004", 409, "同一目标库的连接池总容量超出预算"),
     DS_ADHOC_TOO_MANY("DS0005", 400, "即席查询语句数超出上限"),
+    DS_ENV_INVALID("DS0006", 400, "连接环境标识非法"),
 
     SG_PARSE_FAILED("SG0001", 400, "SQL 解析失败"),
     SG_NON_SELECT("SG0002", 400, "包含非 SELECT 语句"),

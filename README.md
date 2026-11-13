@@ -33,7 +33,7 @@ SQL 健康检查与发布编排平台：只读守卫（SqlGuard）、定时健�
 
 | 模块 | 能力 |
 |---|---|
-| 数据源管理 | 平台内定义 PostgreSQL 连接（可指定默认 Schema，支持 share folder 目标库），HikariCP 连接池运行期动态注册 / 热更新 / 连通性测试；密码 AES-256-GCM 加密存储，接口仅返回掩码；连接池容量预算校验（同一目标库 pool_size 总和 ≤ 预算，超限 DS0004 409）、大结果集流式读取（fetchSize 游标分批拉取）、连接测试 pg_roles 只读账号探测提示 |
+| 数据源管理 | 平台内定义 PostgreSQL 连接（可指定默认 Schema，支持 share folder 目标库），HikariCP 连接池运行期动态注册 / 热更新 / 连通性测试；密码 AES-256-GCM 加密存储，接口仅返回掩码；连接池容量预算校验（同一目标库 pool_size 总和 ≤ 预算，超限 DS0004 409）、大结果集流式读取（fetchSize 游标分批拉取）、连接测试 pg_roles 只读账号探测提示；**环境标识 env（DEV/PROD）**——PROD 连接在列表与编辑弹窗整体红色警示 |
 | 健康检查 | 只读 SQL（JSqlParser AST 级 SELECT-only 校验，保存与执行双重拦截 + `setReadOnly` 兜底）、`${name}` 命名参数占位符、简化断言（VALUE/ROWS + 操作符 + 期望值）、Spring Cron 动态调度、修改记录（版本快照）与执行记录；同一定义防重入（执行中拒绝并发触发，CRON 静默跳过）、调度与执行双线程池（慢查询不挤占调度）、启动恢复中断记录 |
 | Release Plan/Runbook | Release Type（FOLDER 目录 / **ZIP 发布包**——本地上传或 **Nexus 远程下载**，zip-slip 路径逃逸防护）+ Release Path（可指定 share folder）、SCAN 自动生成可重编号的步骤、Pipeline 可视化（横向/纵向）、DRAFT 可编辑 / 运行后只读、CR Number + Remark 启动、**Dry-Run 预演模式**（仅执行 verify_sql 验证、不落库、不触发告警）、**自包含 HTML 执行报告导出**、异步驱动、WAIT/CONTINUE 人工卡点、**verify_sql 提交前验证卡点**、单步重试（含备注审计）、全流程重跑（UAT 计时摘要）、SSE 进度推送、**大批量失败聚合展示**（按错误指纹折叠 + 分页）、SQL 明细日志攒批写入（单次 JDBC 往返批量落库） |
 | 告警通知 | xMatters API 通道（NONE/BASIC/API_KEY 认证）、订阅 HC_FAIL / RELEASE_STEP_FAIL / PLAN_FAIL / RELEASE_STEP_SUCCESS / PLAN_COMPLETED、健康检查连败阈值、推送日志（notify_log） |
@@ -50,7 +50,11 @@ SQL 健康检查与发布编排平台：只读守卫（SqlGuard）、定时健�
 
 ## 更新日志
 
-当前版本：**v1.2**。
+当前版本：**v1.3**。
+
+### 2026-11 —— 连接环境标识与 PROD 警示 🚩
+
+- **2026-11-13**：新增**数据库连接环境标识 env**（仅 DEV / PROD 两档，默认 DEV，存量连接迁移为 DEV）：编辑弹窗选择 PROD 后整个弹窗变红（红边框 + 红色标题栏）并显示警示条；连接列表新增 Env 列，PROD 连接红色 badge + 整行高亮。**Release Plan 运行时动态读取**默认连接的 env（不落库，改连接 env 后计划标识即时跟随）：创建/编辑计划弹窗中默认连接或任一步骤选中 PROD 连接时整体变红 + 警示条、提交前二次确认；计划列表与详情卡显示红色 PROD badge；**启动 PROD 计划前强制二次确认**；连接下拉中 PROD 连接以 `⚠ PROD` 前缀标示。非法 env 值后端校验拒绝（DS0006）
 
 ### 2026-11 —— 发布工作流增强、SQL Console 与企业目录认证 🚀
 
@@ -130,9 +134,9 @@ java -jar sql-pipeline-boot/target/sql-pipeline-boot-1.0.0-SNAPSHOT.jar
 |---|---|
 | `/login.html` | 登录页（HMAC Token 认证；本地 `default-users` 内置账号，开启 LDAP 后目录账号同样从此登录，详见"账号与权限"） |
 | `/`（总览） | 连接 / 健康检查 / 发布计划数量卡片、最近发布计划、平台健康状态 |
-| `/connections.html` | 连接 CRUD（密码留空=不变、connKey 不可改、可配置默认 Schema）、连通性测试（含 pg_roles 只读账号探测提示）、连接池重载、启停（热更新）；同一目标库连接池容量预算硬校验 |
+| `/connections.html` | 连接 CRUD（密码留空=不变、connKey 不可改、可配置默认 Schema、环境标识 DEV/PROD）、连通性测试（含 pg_roles 只读账号探测提示）、连接池重载、启停（热更新）；同一目标库连接池容量预算硬校验；**PROD 连接列表红色 badge + 整行高亮、编辑弹窗整体变红警示** |
 | `/health-checks.html` | 定义 CRUD（`${name}` 命名参数、简化断言三要素）、手动执行（参数覆盖）、执行记录分页、修改历史（版本快照）、启停调度 |
-| `/releases.html` | Release Plan/Runbook：计划列表（View / Edit 按钮，Edit 仅 DRAFT）、创建（类型/路径/默认连接 + SCAN 生成可重编号步骤 + **verify_sql 列配置**；ZIP 类型支持 Nexus 地址+用户名+Token 远程下载）、**Dry-Run 预演启动**（仅验证不落库）、**Pipeline 可视化（横向/纵向切换、分段进度条、人工卡点标记、失败节点 ✗ 失败/总数比例、节点点击查看运行结果）**、步骤详情"仅失败/全部"双 Tab（失败按错误指纹聚合折叠 + 分页）、启动（CR+备注）、WAIT 人工继续（记录确认人）、失败单步重试（含备注）、全流程重跑、SQL 明细日志（按步骤/轮次/状态过滤 + 分页）、UAT 运行摘要、SSE 实时刷新、**HTML 执行报告导出** |
+| `/releases.html` | Release Plan/Runbook：计划列表（View / Edit 按钮，Edit 仅 DRAFT）、创建（类型/路径/默认连接 + SCAN 生成可重编号步骤 + **verify_sql 列配置**；ZIP 类型支持 Nexus 地址+用户名+Token 远程下载）、**Dry-Run 预演启动**（仅验证不落库）、**Pipeline 可视化（横向/纵向切换、分段进度条、人工卡点标记、失败节点 ✗ 失败/总数比例、节点点击查看运行结果）**、步骤详情"仅失败/全部"双 Tab（失败按错误指纹聚合折叠 + 分页）、启动（CR+备注）、WAIT 人工继续（记录确认人）、失败单步重试（含备注）、全流程重跑、SQL 明细日志（按步骤/轮次/状态过滤 + 分页）、UAT 运行摘要、SSE 实时刷新、**HTML 执行报告导出**；**PROD 警示**——计划按默认连接动态标记环境，列表/详情卡红色 PROD badge、创建弹窗选中 PROD 连接时整体变红 + 提交/启动二次确认、连接下拉 `⚠ PROD` 标示 |
 | `/console.html` | SQL Console：连接选择、元数据浏览、选区执行、查询历史、明暗主题切换；只读查询（SqlGuard SELECT-only 校验） |
 | `/notify.html` | 告警通道 CRUD（xMatters URL、认证方式、订阅事件、连败阈值）、通道连通性测试、推送日志 |
 | `/tpam.html` | Self-TPAM 自助临时账号：CR/IN 单号 + staffid + 角色一键发号、密码一次性展示（复制）、现存临时账号列表（剩余时间/过期状态）、提前吊销 |
@@ -291,7 +295,7 @@ curl -s -X POST localhost:8080/api/connections -H 'Content-Type: application/jso
   "connKey": "bizdb", "displayName": "业务演示库",
   "jdbcUrl": "jdbc:postgresql://localhost:5432/sql_pipeline",
   "username": "pipeline", "password": "pipeline",
-  "maxRows": 500, "queryTimeoutS": 15
+  "maxRows": 500, "queryTimeoutS": 15, "env": "DEV"
 }'
 
 curl -s -X POST localhost:8080/api/connections/1/test     # 连通性测试
@@ -469,6 +473,7 @@ L1/L2 的 AST 校验基于 JSqlParser，解析失败同样拒绝（fail-closed�
 | 17 | SQL 明细日志从逐条 INSERT 改为攒批写入（阈值 200 条单次 JDBC 往返，步骤终态/失败强制冲刷） | 大计划执行性能：元库往返从千次级降到个位数 |
 | 18 | 新增企业目录认证 `DirectoryAuthenticator` SPI + 独立扩展模块 `sql-pipeline-ldap`（JDK 原生 JNDI，LDAP/AD 自动开通、adminGroups 组映射、fail-open 降级回退本地） | 需求方新增：员工用企业目录账号登录，模块化隔离扩展能力 |
 | 19 | 健康检查增加同 defId 防重入（手动 409/定时跳过）、调度/执行双线程池、启动恢复残留 RUNNING 记录；新增 SQL Console 独立页面 | 执行链路加固与即席查询体验 |
+| 20 | `db_connection` 增加 `env` 列（DEV/PROD，默认 DEV）；`release_plan` 不存环境列，接口返回时按 `default_conn_key` 运行时动态读取填充瞬时 `planEnv` | 需求方新增：PROD 连接与 PROD 发布计划前端红色警示 + 创建/启动二次确认，动态读取保证连接改 env 后计划标识即时跟随 |
 
 ## 已知约束
 

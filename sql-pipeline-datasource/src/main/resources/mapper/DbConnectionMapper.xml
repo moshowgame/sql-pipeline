@@ -5,12 +5,12 @@
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO db_connection (
             conn_key, display_name, jdbc_url, username, password_enc, driver_class, default_schema,
-            pool_size, conn_timeout_ms, max_rows, query_timeout_s, enabled,
+            pool_size, conn_timeout_ms, max_rows, query_timeout_s, enabled, env,
             created_by, created_at, updated_by, updated_at
         ) VALUES (
             #{connKey}, #{displayName}, #{jdbcUrl}, #{username}, #{passwordEnc}, #{driverClass},
             CAST(#{defaultSchema,jdbcType=VARCHAR} AS VARCHAR),
-            #{poolSize}, #{connTimeoutMs}, #{maxRows}, #{queryTimeoutS}, #{enabled},
+            #{poolSize}, #{connTimeoutMs}, #{maxRows}, #{queryTimeoutS}, #{enabled}, #{env},
             #{createdBy}, now(), #{updatedBy}, now()
         )
     </insert>
@@ -28,6 +28,7 @@
             max_rows        = #{maxRows},
             query_timeout_s = #{queryTimeoutS},
             enabled         = #{enabled},
+            env             = #{env},
             updated_by      = #{updatedBy},
             updated_at      = now()
         WHERE id = #{id}
@@ -53,5 +54,11 @@
 
     <select id="selectEnabled" resultType="com.sqlpipeline.datasource.entity.DbConnection">
         SELECT * FROM db_connection WHERE enabled = 1 ORDER BY id
+    </select>
+
+    <select id="selectEnvByKeys" resultType="com.sqlpipeline.datasource.entity.DbConnection">
+        SELECT conn_key, env FROM db_connection
+        WHERE conn_key IN
+        <foreach collection="keys" item="k" open="(" separator="," close=")">#{k}</foreach>
     </select>
 </mapper>

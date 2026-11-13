@@ -3,25 +3,36 @@ let connections = [];
 $(function () {
     App.bindOperator();
     loadConnections();
+    // 选 PROD 时整个弹窗变红警示
+    $('#fEnv').on('change', function () { toggleConnProdWarning($(this).val() === 'PROD'); });
 });
+
+function toggleConnProdWarning(on) {
+    $('#connModal .modal-content').toggleClass('prod-warning', on);
+    $('#connProdWarning').toggleClass('d-none', !on);
+}
 
 function loadConnections() {
     App.api('GET', '/api/connections').then(function (list) {
         connections = list || [];
         render();
     }).fail(function () {
-        $('#connTable').html('<tr><td colspan="10" class="text-center text-muted py-4">' + App.escapeHtml(I18N.t('common.loadFailed')) + '</td></tr>');
+        $('#connTable').html('<tr><td colspan="11" class="text-center text-muted py-4">' + App.escapeHtml(I18N.t('common.loadFailed')) + '</td></tr>');
     });
 }
 
 function render() {
     if (!connections.length) {
-        $('#connTable').html('<tr><td colspan="10" class="text-center text-muted py-4">' + App.escapeHtml(I18N.t('conn.empty')) + '</td></tr>');
+        $('#connTable').html('<tr><td colspan="11" class="text-center text-muted py-4">' + App.escapeHtml(I18N.t('conn.empty')) + '</td></tr>');
         return;
     }
     const rows = connections.map(function (c) {
         const enabled = c.enabled === 1;
-        return '<tr data-id="' + c.id + '">' +
+        const isProd = c.env === 'PROD';
+        const envBadge = isProd
+            ? App.badge(I18N.t('conn.env.prod'), 'danger')
+            : App.badge(I18N.t('conn.env.dev'), 'secondary');
+        return '<tr data-id="' + c.id + '"' + (isProd ? ' class="table-danger"' : '') + '>' +
             '<td>' + c.id + '</td>' +
             '<td class="mono fw-bold">' + App.escapeHtml(c.connKey) + '</td>' +
             '<td>' + App.escapeHtml(c.displayName) + '</td>' +
@@ -30,6 +41,7 @@ function render() {
             '<td class="mono">' + App.escapeHtml(c.defaultSchema || '-') + '</td>' +
             '<td class="mono">' + c.poolSize + ' / ' + c.connTimeoutMs + 'ms</td>' +
             '<td class="mono">' + c.maxRows + '</td>' +
+            '<td>' + envBadge + '</td>' +
             '<td>' + (enabled ? App.badge(I18N.t('common.enabled'), 'success') : App.badge(I18N.t('common.disabled'), 'secondary')) + '</td>' +
             '<td><div class="btn-group btn-group-sm" role="group">' +
             '<button class="btn btn-outline-info" onclick="testConn(' + c.id + ')">' + I18N.t('common.test') + '</button>' +
@@ -52,7 +64,9 @@ function openCreate() {
     $('#fDefaultSchema').val('public');
     $('#fPoolSize').val(10); $('#fConnTimeout').val(5000);
     $('#fMaxRows').val(1000); $('#fQueryTimeout').val(30); $('#fEnabled').val(1);
+    $('#fEnv').val('DEV');
     $('#pwdRequired').show(); $('#pwdHint').hide(); $('#connKeyHint').show();
+    toggleConnProdWarning(false);
 }
 
 function openEdit(id) {
@@ -72,7 +86,9 @@ function openEdit(id) {
     $('#fMaxRows').val(c.maxRows);
     $('#fQueryTimeout').val(c.queryTimeoutS);
     $('#fEnabled').val(String(c.enabled));
+    $('#fEnv').val(c.env || 'DEV');
     $('#pwdRequired').hide(); $('#pwdHint').show(); $('#connKeyHint').hide();
+    toggleConnProdWarning(c.env === 'PROD');
     new bootstrap.Modal('#connModal').show();
 }
 
@@ -89,7 +105,8 @@ function saveConn() {
         connTimeoutMs: parseInt($('#fConnTimeout').val(), 10),
         maxRows: parseInt($('#fMaxRows').val(), 10),
         queryTimeoutS: parseInt($('#fQueryTimeout').val(), 10),
-        enabled: parseInt($('#fEnabled').val(), 10)
+        enabled: parseInt($('#fEnabled').val(), 10),
+        env: $('#fEnv').val()
     };
     if (id) {
         App.api('PUT', '/api/connections/' + id, base).then(function () {

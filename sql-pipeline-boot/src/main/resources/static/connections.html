@@ -46,11 +46,12 @@
                     <th>Schema</th>
                     <th data-i18n="conn.col.poolTimeout">Pool / Timeout</th>
                     <th>maxRows</th>
+                    <th data-i18n="conn.col.env">Env</th>
                     <th data-i18n="common.status">Status</th>
                     <th style="min-width:220px" data-i18n="common.actions">Actions</th>
                 </tr>
                 </thead>
-                <tbody id="connTable"><tr><td colspan="10" class="text-center text-muted py-4" data-i18n="common.loading">Loading…</td></tr></tbody>
+                <tbody id="connTable"><tr><td colspan="11" class="text-center text-muted py-4" data-i18n="common.loading">Loading…</td></tr></tbody>
             </table>
         </div>
     </div>
@@ -66,6 +67,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <div id="connProdWarning" class="alert alert-danger py-2 mb-3 d-none" data-i18n="conn.prodWarning"></div>
                 <form id="connForm" class="row g-3">
                     <input type="hidden" id="connId">
                     <div class="col-md-4">
@@ -114,6 +116,13 @@
                     <div class="col-md-2">
                         <label class="form-label" data-i18n="conn.field.queryTimeout">queryTimeout(s)</label>
                         <input id="fQueryTimeout" type="number" class="form-control form-control-sm" value="30" min="1">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label" data-i18n="conn.field.env">Env</label>
+                        <select id="fEnv" class="form-select form-select-sm">
+                            <option value="DEV" data-i18n="conn.env.dev">DEV</option>
+                            <option value="PROD" data-i18n="conn.env.prod">PROD</option>
+                        </select>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label" data-i18n="common.status">Status</label>

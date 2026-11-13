@@ -22,4 +22,7 @@ public interface DbConnectionMapper {
     List<DbConnection> selectAll();
 
     List<DbConnection> selectEnabled();
+
+    /** 批量取 conn_key → env（发布计划运行时动态读取环境标识用，仅取两列）。 */
+    List<DbConnection> selectEnvByKeys(@Param("keys") List<String> keys);
 }

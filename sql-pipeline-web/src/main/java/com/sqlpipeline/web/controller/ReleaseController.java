@@ -1,6 +1,7 @@
 package com.sqlpipeline.web.controller;
 
 import com.sqlpipeline.common.api.R;
+import com.sqlpipeline.datasource.service.ConnectionService;
 import com.sqlpipeline.release.entity.ReleasePlan;
 import com.sqlpipeline.release.entity.ReleaseRunSummary;
 import com.sqlpipeline.release.entity.ReleaseSqlLog;
@@ -38,6 +39,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/releases")
@@ -48,6 +50,14 @@ public class ReleaseController {
     private final ReleaseEventPublisher publisher;
     private final ReleaseReportService reportService;
     private final NexusZipFetcher nexusZipFetcher;
+    private final ConnectionService connectionService;
+
+    /** planEnv 瞬时填充：按 default_conn_key 动态读取连接 env（不落库，前端 PROD 高亮用）。 */
+    private void fillPlanEnv(List<ReleasePlan> plans) {
+        Map<String, String> envByKeys = connectionService.envByKeys(
+                plans.stream().map(ReleasePlan::getDefaultConnKey).collect(Collectors.toSet()));
+        plans.forEach(p -> p.setPlanEnv(envByKeys.getOrDefault(p.getDefaultConnKey(), "DEV")));
+    }
 
     /** Nexus 发布包下载 + 解压目录检测：返回 zip 缓存路径（回填 release_path）与步骤预览；凭据不落库不打日志。 */
     @PostMapping("/fetch-zip")
@@ -70,8 +80,10 @@ public class ReleaseController {
     @PostMapping
     public R<ReleasePlan> create(@Valid @RequestBody ReleaseCreateReq req,
                                  @RequestHeader(value = Operator.HEADER, required = false) String operator) {
-        return R.ok(orchestrator.create(req.planName(), req.releaseType(), req.releasePath(),
-                req.defaultConnKey(), toConfigs(req.steps()), Operator.of(operator)));
+        ReleasePlan plan = orchestrator.create(req.planName(), req.releaseType(), req.releasePath(),
+                req.defaultConnKey(), toConfigs(req.steps()), Operator.of(operator));
+        fillPlanEnv(List.of(plan));
+        return R.ok(plan);
     }
 
     /** 编辑计划（仅 DRAFT）：更新 Release 类型/路径/默认连接/步骤配置。 */
@@ -85,7 +97,9 @@ public class ReleaseController {
 
     @GetMapping
     public R<List<ReleasePlan>> list() {
-        return R.ok(orchestrator.listPlans());
+        List<ReleasePlan> plans = orchestrator.listPlans();
+        fillPlanEnv(plans);
+        return R.ok(plans);
     }
 
     @GetMapping("/{id}")
@@ -95,6 +109,7 @@ public class ReleaseController {
         List<ReleaseStep> steps = orchestrator.listSteps(id);
         // 脚本变更检测：当前目录哈希与 start 时存档对比
         steps.forEach(s -> s.setScriptChanged(orchestrator.isScriptChanged(s)));
+        fillPlanEnv(List.of(plan));
         detail.put("plan", plan);
         detail.put("steps", steps);
         detail.put("stepConfigs", orchestrator.parseStepConfigs(plan.getStepConfig()));

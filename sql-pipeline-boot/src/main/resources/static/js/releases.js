@@ -18,6 +18,9 @@ $(function () {
         }).fail(function () {
             $('#planTable').html('<tr><td colspan="9" class="text-center text-muted py-4">' + App.escapeHtml(I18N.t('common.loadFailed')) + '</td></tr>');
         });
+    // 创建弹窗：默认连接/步骤连接变化时同步 PROD 警示
+    $('#cDefaultConn').on('change', updateCreateModalProdWarning);
+    $('#stepConfigRows').on('change', '.sc-conn', updateCreateModalProdWarning);
 });
 
 // ---------- 计划列表 ----------
@@ -30,7 +33,8 @@ function renderPlans() {
     const rows = plans.map(function (p) {
         return '<tr data-id="' + p.id + '" style="cursor:pointer" onclick="loadDetail(' + p.id + ')">' +
             '<td>' + p.id + '</td>' +
-            '<td class="mono fw-bold">' + App.escapeHtml(p.planName) + '</td>' +
+            '<td class="mono fw-bold">' + App.escapeHtml(p.planName) +
+            (p.planEnv === 'PROD' ? ' <span class="badge bg-danger">PROD</span>' : '') + '</td>' +
             '<td>' + App.planBadge(p.status) + '</td>' +
             '<td class="mono">' + App.escapeHtml(p.crNumber || '-') + '</td>' +
             '<td>' + App.escapeHtml(p.operator || '-') + '</td>' +
@@ -74,7 +78,10 @@ function renderDetail(detail, keepScroll) {
     const p = detail.plan;
     $('#detailTitle').text('#' + p.id + ' ' + p.planName);
     $('#detailStatus').html(App.planBadge(p.status) +
+        (p.planEnv === 'PROD' ? ' <span class="badge bg-danger">PROD</span>' : '') +
         (p.dryRun ? ' <span class="badge bg-info">DRY RUN</span>' : ''));
+    $('#detailCard').toggleClass('prod-warning', p.planEnv === 'PROD');
+    $('#detailProdWarning').toggleClass('d-none', p.planEnv !== 'PROD');
 
     $('#planInfo').html([
         infoCell(I18N.t('rel.info.cr'), p.crNumber || '-'),
@@ -418,9 +425,31 @@ $(window).on('unload', function () { if (sseSource) sseSource.close(); });
 // ---------- 创建计划 ----------
 
 function connSelectOptions(selected) {
-    return connections.filter(c => c.enabled === 1).map(c =>
-        '<option value="' + App.escapeHtml(c.connKey) + '"' + (c.connKey === selected ? ' selected' : '') + '>' +
-        App.escapeHtml(c.connKey + '（' + c.displayName + '）') + '</option>').join('');
+    return connections.filter(c => c.enabled === 1).map(c => {
+        const isProd = c.env === 'PROD';
+        const label = isProd
+            ? '⚠ PROD · ' + c.connKey + '（' + c.displayName + '）'
+            : c.connKey + '（' + c.displayName + '）';
+        return '<option value="' + App.escapeHtml(c.connKey) + '"' + (c.connKey === selected ? ' selected' : '') + '>' +
+            App.escapeHtml(label) + '</option>';
+    }).join('');
+}
+
+/** 连接 key → env（默认 DEV）。 */
+function connEnvOf(connKey) {
+    if (!connKey) return 'DEV';
+    const c = connections.find(x => x.connKey === connKey);
+    return (c && c.env === 'PROD') ? 'PROD' : 'DEV';
+}
+
+// ---------- 创建弹窗 PROD 警示：默认连接或任一步骤选中 PROD 连接时整体变红 ----------
+
+function updateCreateModalProdWarning() {
+    const keys = [$('#cDefaultConn').val()].concat(
+        $('#stepConfigRows .sc-conn').map(function () { return $(this).val(); }).get());
+    const prod = keys.some(k => connEnvOf(k) === 'PROD');
+    $('#createModal .modal-content').toggleClass('prod-warning', prod);
+    $('#createProdWarning').toggleClass('d-none', !prod);
 }
 
 // ---------- 创建 / 编辑 / 查看 弹窗 ----------
@@ -449,6 +478,7 @@ function openCreate() {
     $('#cPlanName').prop('disabled', false);
     $('#createModal .btn-primary').show();
     $('#createModalTitle').text(I18N.t('rel.createModal.title'));
+    updateCreateModalProdWarning();
     new bootstrap.Modal('#createModal').show();
 }
 
@@ -476,6 +506,7 @@ function editPlan(id) {
     toggleReleaseType();
     $('#createModal .btn-primary').show();
     $('#createModalTitle').text(I18N.t('rel.editModal.title', { id: id }));
+    updateCreateModalProdWarning();
     new bootstrap.Modal('#createModal').show();
 }
 
@@ -501,6 +532,7 @@ function viewPlan(id) {
     $('#stepConfigRows .btn-outline-danger').hide();
     $('#createModal .btn-primary').hide();
     $('#createModalTitle').text(I18N.t('rel.viewModal.title', { id: id }));
+    updateCreateModalProdWarning();
     new bootstrap.Modal('#createModal').show();
 }
 
@@ -601,6 +633,7 @@ function renderScanPreview(list) {
     list.forEach(function (s) {
         addStepRow(s.stepNo, s.connKey, s.afterMode, s.executor, s.dirName, s.verifySql);
     });
+    updateCreateModalProdWarning();
     const rows = list.map(function (s) {
         return '<tr><td class="mono">' + App.escapeHtml(s.dirName) + '</td>' +
             '<td class="mono">' + I18N.t('rel.scan.fileCount', { n: s.files.length }) + '</td></tr>';
@@ -623,6 +656,11 @@ function savePlan() {
         defaultConnKey: $('#cDefaultConn').val() || null,
         steps: collectStepConfigs()
     };
+    // PROD 二次确认：默认连接或任一步骤连接为 PROD 时警示
+    const usedKeys = [body.defaultConnKey].concat(body.steps.map(s => s.connKey)).filter(Boolean);
+    if (usedKeys.some(k => connEnvOf(k) === 'PROD') && !confirm(I18N.t('rel.confirmProdCreate'))) {
+        return;
+    }
     if (modalMode === 'edit') {
         App.api('PUT', '/api/releases/' + currentEditId, body).then(function () {
             App.toast(I18N.t('rel.toast.updated'));
@@ -654,6 +692,9 @@ function loadPlanListThenDetail(planId) {
 
 function openStart() {
     if (!currentPlan) return;
+    const prod = currentPlan.planEnv === 'PROD';
+    $('#startModal .modal-content').toggleClass('prod-warning', prod);
+    $('#startProdWarning').toggleClass('d-none', !prod);
     $('#startModalPlan').text('#' + currentPlan.id + ' ' + currentPlan.planName);
     $('#sCrNumber').val(currentPlan.crNumber || '');
     $('#sRemark').val(currentPlan.remark || '');
@@ -667,6 +708,10 @@ function doStart() {
     const remark = $('#sRemark').val().trim();
     if (!crNumber || !remark) { App.toast(I18N.t('rel.toast.crRequired'), 'danger'); return; }
     const dryRun = $('#sDryRun').prop('checked');
+    // PROD 计划启动前二次确认
+    if (currentPlan && currentPlan.planEnv === 'PROD' && !confirm(I18N.t('rel.confirmProdStart'))) {
+        return;
+    }
     App.api('POST', '/api/releases/' + currentPlanId + '/start',
             { crNumber: crNumber, remark: remark, dryRun: dryRun })
         .then(function () {

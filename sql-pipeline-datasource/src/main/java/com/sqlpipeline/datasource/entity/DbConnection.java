@@ -22,6 +22,8 @@ public class DbConnection {
     private Integer maxRows;
     private Integer queryTimeoutS;
     private Integer enabled;
+    /** 环境标识：DEV|PROD（默认 DEV），PROD 连接与计划在前端红色警示并二次确认 */
+    private String env;
     private String createdBy;
     private LocalDateTime createdAt;
     private String updatedBy;
